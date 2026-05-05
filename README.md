@@ -9,10 +9,13 @@ there is an agent system before the foundations exist.
 
 ## Current Milestone (X)
 
-Repository setup.
+Python package skeleton.
+
+Sprint 0.1.1 adds the minimal `src/` package layout, an import test, and
+initial Ruff, mypy, and pytest configuration.
 
 This repository is not yet a complete agent runtime. It does not currently
-include application code, API endpoints, Docker configuration, model
+include runtime application code, API endpoints, Docker configuration, model
 integration, tools, persistence, or sandbox execution.
 
 ## Planned MVP 0.1 Scope
