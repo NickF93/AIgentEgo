@@ -9,10 +9,10 @@ there is an agent system before the foundations exist.
 
 ## Current Milestone (X)
 
-Python package skeleton.
+Runtime configuration layer.
 
-Sprint 0.1.1 adds the minimal `src/` package layout, an import test, and
-initial Ruff, mypy, and pytest configuration.
+Sprint 0.1.2 adds environment-based runtime settings, `.env.example`, default
+local Ollama configuration values, and typed configuration tests.
 
 This repository is not yet a complete agent runtime. It does not currently
 include runtime application code, API endpoints, Docker configuration, model
