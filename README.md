@@ -9,13 +9,13 @@ there is an agent system before the foundations exist.
 
 ## Current Milestone (X)
 
-Runtime configuration layer.
+Docker application image skeleton.
 
-Sprint 0.1.2 adds environment-based runtime settings, `.env.example`, default
-local Ollama configuration values, and typed configuration tests.
+Sprint 0.1.3 adds a minimal Docker application image, `.dockerignore`, and a
+Docker build verification script.
 
 This repository is not yet a complete agent runtime. It does not currently
-include runtime application code, API endpoints, Docker configuration, model
+include runtime application code, API endpoints, Compose configuration, model
 integration, tools, persistence, or sandbox execution.
 
 ## Planned MVP 0.1 Scope
