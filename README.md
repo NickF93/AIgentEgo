@@ -9,14 +9,14 @@ there is an agent system before the foundations exist.
 
 ## Current Milestone (X)
 
-Docker application image skeleton.
+Docker Compose Ollama stack.
 
-Sprint 0.1.3 adds a minimal Docker application image, `.dockerignore`, and a
-Docker build verification script.
+Sprint 0.1.4 adds a Docker Compose stack with Ollama, automatic model pull, a
+persistent model volume, an optional GPU override, and a Compose smoke test.
 
 This repository is not yet a complete agent runtime. It does not currently
-include runtime application code, API endpoints, Compose configuration, model
-integration, tools, persistence, or sandbox execution.
+include runtime application code, API endpoints, Ollama client code, tools,
+persistence, or sandbox execution.
 
 ## Planned MVP 0.1 Scope
 
