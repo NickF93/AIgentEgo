@@ -61,6 +61,8 @@ class ModelInfo(BaseModel):
 class LlmProvider(Protocol):
     """Minimal asynchronous LLM provider interface."""
 
+    provider_name: str
+
     async def health(self) -> bool:
         """Return whether the provider is reachable."""
 

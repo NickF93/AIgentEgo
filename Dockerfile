@@ -13,4 +13,4 @@ COPY src ./src
 
 RUN python -m pip install --no-cache-dir .
 
-CMD ["python", "-c", "import aigentego; print(aigentego.__version__)"]
+CMD ["python", "-m", "aigentego.main"]
