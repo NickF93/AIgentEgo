@@ -9,14 +9,15 @@ there is an agent system before the foundations exist.
 
 ## Current Milestone (X)
 
-Docker Compose Ollama stack.
+Ollama HTTP client provider.
 
-Sprint 0.1.4 adds a Docker Compose stack with Ollama, automatic model pull, a
-persistent model volume, an optional GPU override, and a Compose smoke test.
+Sprint 0.1.5 adds provider-neutral LLM models, an asynchronous Ollama HTTP
+client, chat and embedding client methods, and mocked unit tests for the
+integration boundary.
 
 This repository is not yet a complete agent runtime. It does not currently
-include runtime application code, API endpoints, Ollama client code, tools,
-persistence, or sandbox execution.
+include runtime API endpoints, tools, persistence, agent-loop behavior, or
+sandbox execution.
 
 ## Planned MVP 0.1 Scope
 
