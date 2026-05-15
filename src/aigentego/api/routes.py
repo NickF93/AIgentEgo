@@ -1,9 +1,8 @@
 """Runtime API routes."""
 
 from typing import Annotated
-from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from aigentego import __version__
 from aigentego.api.dependencies import get_llm_provider, get_settings
@@ -23,6 +22,7 @@ from aigentego.llm import (
     LlmResponseError,
     LlmTimeoutError,
 )
+from aigentego.observability import get_request_id
 from aigentego.settings import Settings
 
 router = APIRouter()
@@ -67,15 +67,16 @@ async def diagnostics(
     },
 )
 async def chat(
-    request: ChatApiRequest,
+    request: Request,
+    payload: ChatApiRequest,
     settings: Annotated[Settings, Depends(get_settings)],
     provider: Annotated[LlmProvider, Depends(get_llm_provider)],
 ) -> ChatApiResponse:
     """Generate a non-streaming response for a single user message."""
-    request_id = str(uuid4())
+    request_id = get_request_id(request)
     provider_request = ChatRequest(
         model=settings.ollama_chat_model,
-        messages=[ChatMessage(role="user", content=request.message)],
+        messages=[ChatMessage(role="user", content=payload.message)],
     )
 
     try:

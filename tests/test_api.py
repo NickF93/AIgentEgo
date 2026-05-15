@@ -11,6 +11,7 @@ from aigentego.llm import (
     ModelInfo,
 )
 from aigentego.main import create_app
+from aigentego.observability import REQUEST_ID_HEADER
 from aigentego.settings import Settings
 
 
@@ -115,6 +116,7 @@ def test_chat_returns_model_response_with_request_id() -> None:
     assert response.status_code == 200
     body = response.json()
     assert isinstance(body["request_id"], str)
+    assert body["request_id"] == response.headers[REQUEST_ID_HEADER]
     assert body["model"] == "llama3.2:3b"
     assert body["message"] == "Hello from the model."
     assert provider.chat_request is not None

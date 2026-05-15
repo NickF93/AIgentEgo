@@ -9,12 +9,11 @@ small while the foundations are still being built.
 
 ## Current Milestone (X)
 
-FastAPI runtime API.
+Minimal logging and request tracing.
 
-Sprint 0.1.6 adds a minimal FastAPI service with health, diagnostics, and
-non-streaming chat endpoints backed by the settings layer and Ollama provider.
-The Docker Compose stack runs the API service with Ollama, pulls the configured
-models, and includes a smoke test for the working path.
+Sprint 0.1.7 adds basic standard-library logging, per-request identifiers, the
+`X-Request-ID` response header, and minimal request timing logs for the existing
+FastAPI service.
 
 This repository is not yet a complete agent runtime. It does not currently
 include tools, persistence, agent-loop behavior, memory, notes search, calendar
@@ -39,6 +38,10 @@ The API is exposed on port `8080` by default. Supported endpoints are:
 - `GET /health`
 - `GET /diagnostics`
 - `POST /chat` with JSON body `{"message": "Hello"}`
+
+Every API response includes an `X-Request-ID` header. Clients may provide the
+same header on incoming requests when they need to correlate their own logs with
+AIgentEgo request logs.
 
 Run the Compose smoke test with:
 
