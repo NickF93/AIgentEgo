@@ -15,6 +15,7 @@ from aigentego.tools.errors import (
     ToolNotFoundError,
     ToolValidationError,
 )
+from aigentego.tools.executor import ToolExecutor
 from aigentego.tools.registry import ToolRegistry
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "ToolError",
     "ToolErrorDetail",
     "ToolExecutionError",
+    "ToolExecutor",
     "ToolNotFoundError",
     "ToolRegistry",
     "ToolResult",
