@@ -7,6 +7,7 @@ from aigentego.tools.base import (
     ToolDefinition,
     ToolResult,
 )
+from aigentego.tools.calculator import CalculatorTool
 from aigentego.tools.errors import (
     ToolDefinitionError,
     ToolError,
@@ -19,6 +20,7 @@ from aigentego.tools.executor import ToolExecutor
 from aigentego.tools.registry import ToolRegistry
 
 __all__ = [
+    "CalculatorTool",
     "Tool",
     "ToolCall",
     "ToolContext",
