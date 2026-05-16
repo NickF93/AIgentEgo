@@ -1,3 +1,3 @@
-"""AIgentEgo package skeleton."""
+"""AIgentEgo local agent runtime package."""
 
-__version__ = "0.1.8"
+__version__ = "0.1.9"
