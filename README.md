@@ -9,11 +9,11 @@ small while the foundations are still being built.
 
 ## Current Milestone (X)
 
-Minimal logging and request tracing.
+Development task shortcuts and validation workflow.
 
-Sprint 0.1.7 adds basic standard-library logging, per-request identifiers, the
-`X-Request-ID` response header, and minimal request timing logs for the existing
-FastAPI service.
+Sprint 0.1.8 adds a minimal Makefile for the common development checks, Docker
+image verification, Compose validation, smoke testing, and local stack
+management.
 
 This repository is not yet a complete agent runtime. It does not currently
 include tools, persistence, agent-loop behavior, memory, notes search, calendar
@@ -24,13 +24,13 @@ integration, or sandbox execution.
 Start the CPU default stack:
 
 ```sh
-docker compose up --build
+make up
 ```
 
 Use the optional NVIDIA GPU override when the host Docker runtime supports it:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+make up-gpu
 ```
 
 The API is exposed on port `8080` by default. Supported endpoints are:
@@ -43,10 +43,32 @@ Every API response includes an `X-Request-ID` header. Clients may provide the
 same header on incoming requests when they need to correlate their own logs with
 AIgentEgo request logs.
 
-Run the Compose smoke test with:
+Stop the stack with:
 
 ```sh
-scripts/compose_smoke_test.sh
+make down
+```
+
+Follow stack logs with:
+
+```sh
+make logs
+```
+
+## Development Workflow
+
+Run the core local validation suite:
+
+```sh
+make check
+```
+
+Additional Docker and Compose checks are available as explicit targets:
+
+```sh
+make docker-build-check
+make compose-config
+make compose-smoke
 ```
 
 ## Planned MVP 0.1 Scope
