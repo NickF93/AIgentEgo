@@ -5,13 +5,21 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from aigentego import __version__
-from aigentego.api.dependencies import get_llm_provider, get_settings
+from aigentego.api.dependencies import (
+    get_llm_provider,
+    get_settings,
+    get_tool_executor,
+    get_tool_registry,
+)
 from aigentego.api.schemas import (
     ApiErrorResponse,
     ChatApiRequest,
     ChatApiResponse,
     DiagnosticsResponse,
     HealthResponse,
+    ToolExecuteApiRequest,
+    ToolExecuteApiResponse,
+    ToolListApiResponse,
 )
 from aigentego.llm import (
     ChatMessage,
@@ -24,6 +32,7 @@ from aigentego.llm import (
 )
 from aigentego.observability import get_request_id
 from aigentego.settings import Settings
+from aigentego.tools import ToolCall, ToolContext, ToolExecutor, ToolRegistry
 
 router = APIRouter()
 
@@ -104,6 +113,36 @@ async def chat(
         request_id=request_id,
         model=provider_response.model,
         message=provider_response.message.content,
+    )
+
+
+@router.get("/tools", response_model=ToolListApiResponse)
+async def list_tools(
+    registry: Annotated[ToolRegistry, Depends(get_tool_registry)],
+) -> ToolListApiResponse:
+    """List registered deterministic tools."""
+    return ToolListApiResponse(tools=registry.list_definitions())
+
+
+@router.post("/tools/execute", response_model=ToolExecuteApiResponse)
+async def execute_tool(
+    request: Request,
+    payload: ToolExecuteApiRequest,
+    executor: Annotated[ToolExecutor, Depends(get_tool_executor)],
+) -> ToolExecuteApiResponse:
+    """Execute an explicitly requested deterministic tool."""
+    request_id = get_request_id(request)
+    tool_result = await executor.execute(
+        ToolCall(tool_name=payload.tool_name, arguments=payload.arguments),
+        ToolContext(request_id=request_id),
+    )
+
+    return ToolExecuteApiResponse(
+        request_id=request_id,
+        tool_name=tool_result.tool_name,
+        success=tool_result.success,
+        result=tool_result.result,
+        error=tool_result.error,
     )
 
 
