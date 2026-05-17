@@ -27,6 +27,14 @@ Included in MVP 0.1:
 - Docker and Compose smoke tests
 - Makefile development shortcuts
 
+## Roadmap
+
+The high-level 0.x MVP roadmap is tracked in
+[docs/ROADMAP.md](docs/ROADMAP.md). It separates completed MVP 0.1 behavior
+from planned future capabilities such as deterministic tools, agent loop,
+memory, RAG, filesystem access, calendar integration, sandboxing, streaming,
+and CLI support.
+
 ## Prerequisites
 
 - Python 3.12
