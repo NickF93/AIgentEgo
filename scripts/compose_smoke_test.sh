@@ -177,6 +177,79 @@ if not str(data.get("message", "")).strip():
 ' "$AGENT_PORT"
 }
 
+agent_tools() {
+    docker compose -p "$PROJECT_NAME" exec -T agent-api python -c '
+import json
+import sys
+import urllib.request
+
+with urllib.request.urlopen(
+    "http://127.0.0.1:" + sys.argv[1] + "/tools",
+    timeout=10,
+) as response:
+    data = json.load(response)
+
+if not isinstance(data, dict):
+    raise SystemExit("tools response must be a JSON object")
+
+tools = data.get("tools")
+if not isinstance(tools, list):
+    raise SystemExit("tools response is missing tools list")
+
+for tool in tools:
+    if isinstance(tool, dict) and tool.get("name") == "calculator":
+        break
+else:
+    raise SystemExit("calculator tool is not listed")
+' "$AGENT_PORT"
+}
+
+agent_calculator() {
+    docker compose -p "$PROJECT_NAME" exec -T agent-api python -c '
+import json
+import sys
+import urllib.request
+
+request_id = "compose-smoke-calculator"
+payload = json.dumps(
+    {
+        "tool_name": "calculator",
+        "arguments": {"expression": "12 * 31"},
+    },
+).encode("utf-8")
+request = urllib.request.Request(
+    "http://127.0.0.1:" + sys.argv[1] + "/tools/execute",
+    data=payload,
+    headers={
+        "Content-Type": "application/json",
+        "X-Request-ID": request_id,
+    },
+    method="POST",
+)
+
+with urllib.request.urlopen(request, timeout=10) as response:
+    data = json.load(response)
+    response_request_id = response.headers.get("X-Request-ID")
+
+if response_request_id != request_id:
+    raise SystemExit("tool response X-Request-ID header was not preserved")
+if not isinstance(data, dict):
+    raise SystemExit("tool execution response must be a JSON object")
+if data.get("request_id") != request_id:
+    raise SystemExit("tool execution response request_id mismatch")
+if data.get("tool_name") != "calculator":
+    raise SystemExit("tool execution response has unexpected tool_name")
+if data.get("success") is not True:
+    raise SystemExit("calculator tool execution was not successful")
+if data.get("error") is not None:
+    raise SystemExit("calculator tool execution returned an error")
+
+result = data.get("result")
+if not isinstance(result, dict) or result.get("value") != 372:
+    raise SystemExit("calculator tool execution returned unexpected result")
+' "$AGENT_PORT"
+}
+
 trap cleanup EXIT INT TERM
 
 cleanup
@@ -193,3 +266,5 @@ wait_for_agent_api
 agent_get /health
 agent_get /diagnostics
 agent_chat
+agent_tools
+agent_calculator
