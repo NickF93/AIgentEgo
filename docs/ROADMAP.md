@@ -8,8 +8,9 @@ developer-facing UX.
 
 ## Current Status
 
-MVP 0.1 is completed on `develop`. It provides the local LLM runtime
-foundation:
+MVP 0.1 and MVP 0.2 are completed.
+
+MVP 0.1 provides the local LLM runtime foundation:
 
 - Python package
 - Environment-based settings
@@ -27,8 +28,22 @@ foundation:
 - Makefile development workflow
 - README quickstart
 
+MVP 0.2 adds the deterministic tool runtime:
+
+- Provider-neutral tool contracts
+- Normalized tool errors
+- Deterministic `ToolRegistry`
+- Deterministic `ToolExecutor`
+- Safe arithmetic `CalculatorTool`
+- `GET /tools`
+- `POST /tools/execute`
+- Tool execution request tracing and logging
+- Smoke coverage for manual tool execution
+- README documentation for explicit API-driven tools
+
 AIgentEgo is still not a complete agent runtime. The following capabilities are
-not implemented yet: agent loop, tool calling, memory, RAG, notes search, file
+not implemented yet: LLM-selected tool calling, provider-neutral backend
+factory, llama.cpp backend support, agent loop, memory, RAG, notes search, file
 access, calendar integration, Python sandbox, CLI, streaming, and persisted
 multi-turn conversation state.
 
@@ -46,8 +61,10 @@ multi-turn conversation state.
 | Version | Milestone name | Status | Primary capability | Expected user-visible outcome |
 | --- | --- | --- | --- | --- |
 | `0.1` | Local LLM runtime foundation | Completed | Local Ollama-backed API foundation | Run a local API with health, diagnostics, chat, tracing, and smoke validation |
-| `0.2` | Deterministic tool runtime | Next planned | Manual, deterministic tool execution | Execute registered tools through explicit API calls without LLM choice |
+| `0.2` | Deterministic tool runtime | Completed | Manual, deterministic tool execution | Execute registered tools through explicit API calls without LLM choice |
+| `0.2.7` | Provider-neutral LLM runtime boundary | Planned | Generic LLM settings, provider factory, and diagnostics | Prepare application layers to depend on `LlmProvider`, not a concrete backend |
 | `0.3` | LLM structured output to ToolCall | Planned | Model-produced structured tool calls | Let the LLM request bounded tool calls through validated structured output |
+| `0.3.7` | llama.cpp backend compatibility | Planned | Additional local backend adapter and capability comparison | Compare Ollama and llama.cpp behavior before building the agent loop |
 | `0.4` | Agent loop v1 | Planned | Bounded multi-step agent execution | Run a minimal inspectable agent loop with limits and observations |
 | `0.5` | Persistent conversations and memory | Planned | Local persistence and conversation memory | Resume sessions and inject saved context into chat or agent runs |
 | `0.6` | Notes search, read-only filesystem, and RAG v1 | Planned | Local retrieval over explicit read-only roots | Search notes/files and use retrieved snippets as grounded context |
@@ -79,9 +96,9 @@ Internal sprint blocks:
 
 ## `0.2` Deterministic Tool Runtime
 
-Status: next planned.
+Status: completed.
 
-This milestone introduces deterministic tool execution without LLM
+This milestone implemented deterministic tool execution without LLM
 decision-making. Tools are executed manually or through deterministic API calls.
 The LLM does not choose tools yet, no agent loop is introduced yet, and no
 memory or RAG is introduced yet.
@@ -96,13 +113,60 @@ High-level sprint blocks:
 - `0.2.5` = tool observability and request tracing integration
 - `0.2.6` = tests, smoke coverage, and README update
 
+## `0.2.7` Provider-Neutral LLM Runtime Boundary
+
+Status: planned.
+
+This bridge phase prevents the rest of AIgentEgo from becoming semantically
+locked to Ollama before LLM-produced ToolCalls are introduced. Application
+layers should depend on the provider-neutral `LlmProvider` protocol, not on
+concrete provider adapters.
+
+Planned boundary work:
+
+- Introduce canonical generic settings:
+  - `LLM_BACKEND`
+  - `LLM_BASE_URL`
+  - `CHAT_MODEL`
+  - `EMBEDDING_MODEL`
+  - `REQUEST_TIMEOUT_SECONDS`
+- Add a provider factory that constructs the configured `LlmProvider`.
+- Refactor diagnostics toward provider-neutral fields where possible.
+- Preserve compatibility handling for existing Ollama-specific environment
+  variables if it is needed for a smooth migration.
+- Keep Ollama as the only implemented backend in this phase.
+- Do not implement llama.cpp, structured ToolCalls, or the agent loop here.
+
+Desired dependency direction:
+
+```text
+FastAPI routes / future structured ToolCall flow / future agent loop / future RAG
+  -> LlmProvider protocol
+  -> provider factory
+  -> concrete provider adapter:
+       - OllamaClient
+       - future LlamaCppProvider
+```
+
+Rules for this boundary:
+
+- Concrete providers must not depend on each other.
+- Application code must not branch on Ollama vs llama.cpp except inside the
+  provider factory or narrowly defined compatibility/capability code.
+- Backend-specific HTTP payloads must stay inside provider adapters.
+- Normalized LLM errors must remain provider-neutral.
+- Documentation must continue to distinguish implemented behavior from planned
+  behavior.
+
 ## `0.3` LLM Structured Output to ToolCall
 
 Status: planned.
 
 This milestone introduces LLM-assisted tool calling through structured output.
 It is still not a full multi-step agent loop. Execution remains bounded and
-inspectable, with validation between model output and tool execution.
+inspectable, with validation between model output and tool execution. It should
+build on the provider-neutral boundary so structured-output behavior is not
+hardwired to one backend's HTTP payload shape.
 
 High-level sprint blocks:
 
@@ -113,6 +177,34 @@ High-level sprint blocks:
 - `0.3.4` = single-step LLM tool execution flow
 - `0.3.5` = final answer synthesis after tool result
 - `0.3.6` = evaluation cases for tool selection accuracy
+
+## `0.3.7` llama.cpp Backend Compatibility
+
+Status: planned.
+
+This bridge phase comes after structured ToolCall support and before Agent
+Loop v1. Ollama remains the default backend. A future `LlamaCppProvider` is
+intended for CPU-only, low-RAM, edge, GGUF-controlled, or benchmarking-oriented
+deployments.
+
+The goal is compatibility evidence before building the full agent loop. The
+runtime should compare backend behavior for chat, embeddings, structured output
+reliability, error handling, and operational constraints while keeping provider
+details behind the `LlmProvider` boundary.
+
+Provider capability metadata may be introduced if real backend differences
+require it:
+
+- `supports_chat`
+- `supports_embeddings`
+- `supports_streaming`
+- `supports_json_mode`
+- `supports_schema_constrained_output`
+- `supports_tool_calling_api`
+
+Any additional capability flag should be justified by an actual backend
+difference. This milestone must not introduce the agent loop, memory, RAG, CLI,
+or streaming UX.
 
 ## `0.4` Agent Loop v1
 
@@ -165,7 +257,7 @@ High-level sprint blocks:
 - `0.6.0` = read-only filesystem policy and allowed roots
 - `0.6.1` = file discovery and metadata indexing
 - `0.6.2` = notes ingestion for text and Markdown files
-- `0.6.3` = embedding pipeline using the configured Ollama embedding model
+- `0.6.3` = embedding pipeline using the configured embedding model
 - `0.6.4` = local retrieval index
 - `0.6.5` = NotesSearchTool
 - `0.6.6` = ReadOnlyFileTool
@@ -222,7 +314,7 @@ runtime safety policies.
 High-level sprint blocks:
 
 - `0.9.0` = streaming response contracts
-- `0.9.1` = Ollama streaming client support
+- `0.9.1` = provider streaming client support
 - `0.9.2` = `/chat/stream` endpoint
 - `0.9.3` = agent event stream
 - `0.9.4` = CLI package entrypoint
@@ -252,6 +344,8 @@ High-level sprint blocks:
 
 | Capability | Roadmap milestone |
 | --- | --- |
+| provider-neutral LLM runtime boundary | `0.2.7` |
+| llama.cpp backend compatibility | `0.3.7` |
 | agent loop | `0.4` |
 | tool calling | `0.2` and `0.3` |
 | memory | `0.5` |
@@ -269,15 +363,25 @@ High-level sprint blocks:
 The roadmap starts with a local LLM runtime so later work has a real API,
 settings layer, container path, and smoke test baseline. Deterministic tools
 come next because tool contracts and execution semantics should be stable
-before the LLM is allowed to request tools. LLM-produced ToolCalls are added
-only after those deterministic boundaries exist.
+before the LLM is allowed to request tools.
 
-The bounded agent loop follows structured ToolCalls because it needs a reliable
-way to alternate between model output and tool observations. Memory, RAG,
-files, calendar, and sandboxing come after the loop because they add state,
-external data, or security-sensitive execution surfaces. Streaming and CLI come
-after the core runtime behavior is stable, and the final milestone focuses on
-evaluation, hardening, documentation, and release readiness.
+The provider-neutral LLM boundary comes before structured ToolCalls because the
+structured-output flow must target the `LlmProvider` protocol rather than an
+Ollama-specific payload shape. LLM-produced ToolCalls are added only after the
+deterministic tool boundary and provider boundary exist.
+
+llama.cpp compatibility comes after structured ToolCalls because there must be
+a concrete structured-output behavior to compare across backends. It comes
+before the bounded agent loop so the loop is not built on assumptions that only
+hold for one backend.
+
+The bounded agent loop follows structured ToolCalls and backend compatibility
+because it needs a reliable way to alternate between model output and tool
+observations. Memory, RAG, files, calendar, and sandboxing come after the loop
+because they add state, external data, or security-sensitive execution
+surfaces. Streaming and CLI come after the core runtime behavior is stable, and
+the final milestone focuses on evaluation, hardening, documentation, and
+release readiness.
 
 ## Contribution and Planning Note
 

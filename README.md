@@ -24,7 +24,7 @@ Included through MVP 0.2:
 - Automatic Ollama model pull
 - FastAPI runtime API
 - `/health`, `/diagnostics`, and `/chat`
-- Provider-neutral Ollama HTTP client
+- Provider-neutral LLM models with an Ollama HTTP client
 - Deterministic tool contracts and normalized tool errors
 - Tool registry and deterministic tool executor
 - Calculator tool for safe arithmetic expressions
@@ -41,9 +41,10 @@ yet.
 
 The high-level 0.x MVP roadmap is tracked in
 [docs/ROADMAP.md](docs/ROADMAP.md). It separates completed behavior from
-planned future capabilities such as LLM-assisted tool calling, the agent loop,
-memory, RAG, filesystem access, calendar integration, sandboxing, streaming,
-and CLI support.
+planned future capabilities such as provider-neutral LLM backend selection,
+llama.cpp compatibility, LLM-assisted tool calling, the agent loop, memory,
+RAG, filesystem access, calendar integration, sandboxing, streaming, and CLI
+support.
 
 ## Prerequisites
 
@@ -276,7 +277,11 @@ through `POST /tools/execute`, and then cleans up its containers.
 
 ## Next Direction
 
-The next milestone should add LLM structured output to the existing
-deterministic tool substrate. That work should keep execution bounded and
-inspectable: model-produced tool calls are future behavior, and the full
-multi-step agent loop remains a later milestone.
+The next planning step is a provider-neutral LLM runtime boundary. AIgentEgo
+should keep application layers depending on the `LlmProvider` protocol rather
+than concrete Ollama-specific code before structured ToolCall work begins.
+
+Structured ToolCall support remains the next major behavior milestone after
+that boundary. llama.cpp backend compatibility is planned after structured
+ToolCall support and before Agent Loop v1, so backend behavior can be compared
+before the first bounded multi-step loop is built.
