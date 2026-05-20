@@ -34,3 +34,19 @@ class LlmResponseError(LlmProviderError):
 
 class LlmTimeoutError(LlmProviderError):
     """The provider request timed out."""
+
+
+class LlmConfigurationError(LlmProviderError):
+    """The configured LLM provider cannot be constructed."""
+
+
+class UnsupportedLlmBackendError(LlmConfigurationError):
+    """The configured LLM backend is not implemented."""
+
+    def __init__(self, backend: str) -> None:
+        self.backend = backend
+        super().__init__(
+            f"unsupported LLM backend {backend!r}",
+            provider="llm",
+            operation="configure_provider",
+        )
