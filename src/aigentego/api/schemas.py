@@ -1,6 +1,10 @@
 """API request and response schemas."""
 
-from pydantic import BaseModel, Field, field_validator
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from aigentego.tools import ToolDefinition, ToolErrorDetail
 
 
 class HealthResponse(BaseModel):
@@ -51,3 +55,28 @@ class ApiErrorResponse(BaseModel):
 
     error: str
     message: str
+
+
+class ToolListApiResponse(BaseModel):
+    """Public deterministic tool listing response."""
+
+    tools: list[ToolDefinition]
+
+
+class ToolExecuteApiRequest(BaseModel):
+    """Public manual deterministic tool execution request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tool_name: str = Field(min_length=1)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolExecuteApiResponse(BaseModel):
+    """Public manual deterministic tool execution response."""
+
+    request_id: str
+    tool_name: str
+    success: bool
+    result: dict[str, Any] | None = None
+    error: ToolErrorDetail | None = None
