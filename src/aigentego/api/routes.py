@@ -43,10 +43,12 @@ async def health(
     provider: Annotated[LlmProvider, Depends(get_llm_provider)],
 ) -> HealthResponse:
     """Return API health and LLM provider reachability."""
+    provider_reachable = await _provider_reachable(provider)
     return HealthResponse(
         status="ok",
-        ollama_reachable=await _provider_reachable(provider),
-        chat_model=settings.ollama_chat_model,
+        provider_reachable=provider_reachable,
+        chat_model=settings.chat_model,
+        ollama_reachable=provider_reachable,
     )
 
 
@@ -56,14 +58,18 @@ async def diagnostics(
     provider: Annotated[LlmProvider, Depends(get_llm_provider)],
 ) -> DiagnosticsResponse:
     """Return non-secret runtime diagnostics."""
+    provider_reachable = await _provider_reachable(provider)
     return DiagnosticsResponse(
         status="ok",
         package_version=__version__,
+        llm_backend=settings.llm_backend,
         llm_provider=provider.provider_name,
-        ollama_base_url=settings.ollama_base_url,
-        chat_model=settings.ollama_chat_model,
-        embedding_model=settings.ollama_embed_model,
-        ollama_reachable=await _provider_reachable(provider),
+        provider_base_url=settings.llm_base_url,
+        chat_model=settings.chat_model,
+        embedding_model=settings.embedding_model,
+        provider_reachable=provider_reachable,
+        ollama_base_url=settings.llm_base_url,
+        ollama_reachable=provider_reachable,
     )
 
 
@@ -84,7 +90,7 @@ async def chat(
     """Generate a non-streaming response for a single user message."""
     request_id = get_request_id(request)
     provider_request = ChatRequest(
-        model=settings.ollama_chat_model,
+        model=settings.chat_model,
         messages=[ChatMessage(role="user", content=payload.message)],
     )
 

@@ -11,8 +11,9 @@ class HealthResponse(BaseModel):
     """Health status for the runtime API and configured LLM provider."""
 
     status: str
-    ollama_reachable: bool
+    provider_reachable: bool
     chat_model: str
+    ollama_reachable: bool
 
 
 class DiagnosticsResponse(BaseModel):
@@ -20,10 +21,13 @@ class DiagnosticsResponse(BaseModel):
 
     status: str
     package_version: str
+    llm_backend: str
     llm_provider: str
-    ollama_base_url: str
+    provider_base_url: str
     chat_model: str
     embedding_model: str
+    provider_reachable: bool
+    ollama_base_url: str
     ollama_reachable: bool
 
 
