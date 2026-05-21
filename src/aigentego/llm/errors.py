@@ -50,3 +50,31 @@ class UnsupportedLlmBackendError(LlmConfigurationError):
             provider="llm",
             operation="configure_provider",
         )
+
+
+class ToolCallParseError(LlmProviderError):
+    """Structured tool-call output could not be parsed."""
+
+    def __init__(self, message: str = "invalid structured tool-call JSON") -> None:
+        super().__init__(
+            message,
+            provider="llm",
+            operation="parse_tool_calls",
+        )
+
+
+class ToolCallValidationError(LlmProviderError):
+    """Structured tool-call output failed provider-neutral validation."""
+
+    def __init__(
+        self,
+        message: str = "invalid structured tool-call output",
+        *,
+        tool_name: str | None = None,
+    ) -> None:
+        self.tool_name = tool_name
+        super().__init__(
+            message,
+            provider="llm",
+            operation="parse_tool_calls",
+        )
