@@ -8,9 +8,9 @@ developer-facing UX.
 
 ## Current Status
 
-MVP 0.1, MVP 0.2, and MVP 0.2.7 are completed. MVP 0.2.7 closed the
-provider-neutral LLM configuration, provider construction, and diagnostics
-bridge while keeping Ollama as the only implemented backend.
+MVP 0.1, MVP 0.2, MVP 0.2.7, and MVP 0.3 are completed. MVP 0.3 closed
+single-step LLM structured output to deterministic ToolCall handling while
+keeping execution bounded and provider-neutral.
 
 MVP 0.1 provides the local LLM runtime foundation:
 
@@ -44,9 +44,9 @@ MVP 0.2 adds the deterministic tool runtime:
 - README documentation for explicit API-driven tools
 
 AIgentEgo is still not a complete agent runtime. The following capabilities are
-not implemented yet: LLM-selected tool calling, llama.cpp backend support,
-agent loop, memory, RAG, notes search, file access, calendar integration,
-Python sandbox, CLI, streaming, and persisted multi-turn conversation state.
+not implemented yet: llama.cpp backend support, multi-step agent loop, memory,
+RAG, notes search, file access, calendar integration, Python sandbox, CLI,
+streaming, and persisted multi-turn conversation state.
 
 ## Roadmap Principles
 
@@ -64,7 +64,7 @@ Python sandbox, CLI, streaming, and persisted multi-turn conversation state.
 | `0.1` | Local LLM runtime foundation | Completed | Local Ollama-backed API foundation | Run a local API with health, diagnostics, chat, tracing, and smoke validation |
 | `0.2` | Deterministic tool runtime | Completed | Manual, deterministic tool execution | Execute registered tools through explicit API calls without LLM choice |
 | `0.2.7` | Provider-neutral LLM runtime boundary | Completed | Generic LLM settings, provider factory, and diagnostics | Application layers depend on `LlmProvider`, not a concrete backend |
-| `0.3` | LLM structured output to ToolCall | Planned | Model-produced structured tool calls | Let the LLM request bounded tool calls through validated structured output |
+| `0.3` | LLM structured output to ToolCall | Completed | Model-produced structured tool calls | Let the LLM request bounded tool calls through validated structured output |
 | `0.3.7` | llama.cpp backend compatibility | Planned | Additional local backend adapter and capability comparison | Compare Ollama and llama.cpp behavior before building the agent loop |
 | `0.4` | Agent loop v1 | Planned | Bounded multi-step agent execution | Run a minimal inspectable agent loop with limits and observations |
 | `0.5` | Persistent conversations and memory | Planned | Local persistence and conversation memory | Resume sessions and inject saved context into chat or agent runs |
@@ -161,13 +161,22 @@ Rules for this boundary:
 
 ## `0.3` LLM Structured Output to ToolCall
 
-Status: planned.
+Status: completed.
 
 This milestone introduces LLM-assisted tool calling through structured output.
 It is still not a full multi-step agent loop. Execution remains bounded and
 inspectable, with validation between model output and tool execution. It should
 build on the provider-neutral boundary so structured-output behavior is not
 hardwired to one backend's HTTP payload shape.
+
+Completed behavior:
+
+- Registered deterministic tool definitions can be serialized for model context.
+- Model-produced tool requests must match a strict structured JSON contract.
+- Structured output is parsed and validated before any tool execution.
+- Unknown or malformed tool calls produce safe failures or bounded repair decisions.
+- Valid calls execute through deterministic `ToolExecutor`.
+- Final answer synthesis can use deterministic tool results or safe-failure context.
 
 High-level sprint blocks:
 
