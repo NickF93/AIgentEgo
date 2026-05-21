@@ -5,7 +5,11 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from aigentego.llm.errors import ToolCallParseError, ToolCallValidationError
+from aigentego.llm.errors import (
+    ToolCallFailureCode,
+    ToolCallParseError,
+    ToolCallValidationError,
+)
 from aigentego.llm.tool_calls import StructuredToolCallOutput
 from aigentego.tools import ToolCall, ToolNotFoundError, ToolRegistry
 
@@ -23,6 +27,7 @@ def parse_structured_tool_calls(
     if not isinstance(parsed, dict):
         raise ToolCallValidationError(
             "structured tool-call output must be a JSON object",
+            failure_code=ToolCallFailureCode.NON_OBJECT_JSON,
         )
 
     output = _validate_structured_output(parsed)
@@ -35,7 +40,9 @@ def _validate_structured_output(data: dict[str, Any]) -> StructuredToolCallOutpu
     try:
         return StructuredToolCallOutput.model_validate(data)
     except ValidationError as error:
-        raise ToolCallValidationError() from error
+        raise ToolCallValidationError(
+            failure_code=ToolCallFailureCode.SCHEMA_INVALID_JSON,
+        ) from error
 
 
 def _validate_registered_tools(
@@ -48,5 +55,6 @@ def _validate_registered_tools(
         except ToolNotFoundError as error:
             raise ToolCallValidationError(
                 "requested tool is not registered",
+                failure_code=ToolCallFailureCode.UNKNOWN_TOOL,
                 tool_name=tool_call.tool_name,
             ) from error
