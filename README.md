@@ -14,7 +14,7 @@ tool, and be validated repeatably. It is not yet a complete agent runtime.
 
 ## MVP 0.2 and 0.2.7 Status
 
-Current Milestone (X): MVP 0.2.7 provider-neutral LLM runtime boundary.
+Current Milestone (X): MVP 0.2.7 provider-neutral LLM runtime boundary closure.
 
 Included through MVP 0.2:
 
@@ -151,7 +151,7 @@ Example shape:
 ```json
 {
   "status": "ok",
-  "package_version": "0.2.6",
+  "package_version": "0.2.7",
   "llm_backend": "ollama",
   "llm_provider": "ollama",
   "provider_base_url": "http://ollama:11434",
@@ -296,9 +296,9 @@ through `POST /tools/execute`, and then cleans up its containers.
 
 ## Next Direction
 
-The current bridge milestone is the provider-neutral LLM runtime boundary.
-AIgentEgo should keep application layers depending on the `LlmProvider`
-protocol rather than concrete Ollama-specific code before structured ToolCall
+The completed bridge milestone is the provider-neutral LLM runtime boundary.
+AIgentEgo now keeps application layers depending on the `LlmProvider` protocol
+rather than concrete Ollama-specific construction before structured ToolCall
 work begins.
 
 Structured ToolCall support remains the next major behavior milestone after

@@ -8,9 +8,9 @@ developer-facing UX.
 
 ## Current Status
 
-MVP 0.1 and MVP 0.2 are completed. MVP 0.2.7 is in progress as a bridge
-milestone for provider-neutral LLM configuration, provider construction, and
-diagnostics while keeping Ollama as the only implemented backend.
+MVP 0.1, MVP 0.2, and MVP 0.2.7 are completed. MVP 0.2.7 closed the
+provider-neutral LLM configuration, provider construction, and diagnostics
+bridge while keeping Ollama as the only implemented backend.
 
 MVP 0.1 provides the local LLM runtime foundation:
 
@@ -63,7 +63,7 @@ Python sandbox, CLI, streaming, and persisted multi-turn conversation state.
 | --- | --- | --- | --- | --- |
 | `0.1` | Local LLM runtime foundation | Completed | Local Ollama-backed API foundation | Run a local API with health, diagnostics, chat, tracing, and smoke validation |
 | `0.2` | Deterministic tool runtime | Completed | Manual, deterministic tool execution | Execute registered tools through explicit API calls without LLM choice |
-| `0.2.7` | Provider-neutral LLM runtime boundary | In progress | Generic LLM settings, provider factory, and diagnostics | Prepare application layers to depend on `LlmProvider`, not a concrete backend |
+| `0.2.7` | Provider-neutral LLM runtime boundary | Completed | Generic LLM settings, provider factory, and diagnostics | Application layers depend on `LlmProvider`, not a concrete backend |
 | `0.3` | LLM structured output to ToolCall | Planned | Model-produced structured tool calls | Let the LLM request bounded tool calls through validated structured output |
 | `0.3.7` | llama.cpp backend compatibility | Planned | Additional local backend adapter and capability comparison | Compare Ollama and llama.cpp behavior before building the agent loop |
 | `0.4` | Agent loop v1 | Planned | Bounded multi-step agent execution | Run a minimal inspectable agent loop with limits and observations |
@@ -116,7 +116,7 @@ High-level sprint blocks:
 
 ## `0.2.7` Provider-Neutral LLM Runtime Boundary
 
-Status: in progress.
+Status: completed.
 
 This bridge phase prevents the rest of AIgentEgo from becoming semantically
 locked to Ollama before LLM-produced ToolCalls are introduced. Application
