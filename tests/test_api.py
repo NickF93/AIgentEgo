@@ -55,9 +55,10 @@ def make_client(
     provider = provider or MockProvider()
     settings = settings or Settings(
         _env_file=None,
-        ollama_base_url="http://ollama:11434",
-        ollama_chat_model="llama3.2:3b",
-        ollama_embed_model="nomic-embed-text",
+        llm_backend="ollama",
+        llm_base_url="http://ollama:11434",
+        chat_model="llama3.2:3b",
+        embedding_model="nomic-embed-text",
     )
 
     app.dependency_overrides[get_settings] = lambda: settings
@@ -80,17 +81,19 @@ def test_health_returns_expected_status_with_mocked_provider() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
-        "ollama_reachable": True,
+        "provider_reachable": True,
         "chat_model": "llama3.2:3b",
+        "ollama_reachable": True,
     }
 
 
 def test_diagnostics_returns_non_secret_configuration_fields() -> None:
     settings = Settings(
         _env_file=None,
-        ollama_base_url="http://ollama:11434",
-        ollama_chat_model="llama3.2:3b",
-        ollama_embed_model="nomic-embed-text",
+        llm_backend="ollama",
+        llm_base_url="http://ollama:11434",
+        chat_model="llama3.2:3b",
+        embedding_model="nomic-embed-text",
     )
     client, _provider = make_client(MockProvider(reachable=False), settings)
 
@@ -99,10 +102,13 @@ def test_diagnostics_returns_non_secret_configuration_fields() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
+    assert body["llm_backend"] == "ollama"
     assert body["llm_provider"] == "mock"
+    assert body["provider_base_url"] == "http://ollama:11434"
     assert body["ollama_base_url"] == "http://ollama:11434"
     assert body["chat_model"] == "llama3.2:3b"
     assert body["embedding_model"] == "nomic-embed-text"
+    assert body["provider_reachable"] is False
     assert body["ollama_reachable"] is False
     assert "environment" not in body
     assert "log_level" not in body

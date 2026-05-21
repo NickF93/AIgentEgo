@@ -10,11 +10,14 @@ from aigentego.llm.base import (
     ModelInfo,
 )
 from aigentego.llm.errors import (
+    LlmConfigurationError,
     LlmConnectionError,
     LlmProviderError,
     LlmResponseError,
     LlmTimeoutError,
+    UnsupportedLlmBackendError,
 )
+from aigentego.llm.factory import build_llm_provider
 from aigentego.llm.ollama_client import OllamaClient
 
 __all__ = [
@@ -23,6 +26,7 @@ __all__ = [
     "ChatResponse",
     "EmbeddingRequest",
     "EmbeddingResponse",
+    "LlmConfigurationError",
     "LlmConnectionError",
     "LlmProvider",
     "LlmProviderError",
@@ -30,4 +34,6 @@ __all__ = [
     "LlmTimeoutError",
     "ModelInfo",
     "OllamaClient",
+    "UnsupportedLlmBackendError",
+    "build_llm_provider",
 ]

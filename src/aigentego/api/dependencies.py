@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import Depends
 
-from aigentego.llm import LlmProvider, OllamaClient
+from aigentego.llm import LlmProvider, build_llm_provider
 from aigentego.settings import Settings
 from aigentego.tools import CalculatorTool, ToolExecutor, ToolRegistry
 
@@ -18,10 +18,7 @@ def get_llm_provider(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> LlmProvider:
     """Build the configured LLM provider."""
-    return OllamaClient(
-        base_url=settings.ollama_base_url,
-        timeout_seconds=settings.request_timeout_seconds,
-    )
+    return build_llm_provider(settings)
 
 
 def get_tool_registry() -> ToolRegistry:

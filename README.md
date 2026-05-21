@@ -1,7 +1,8 @@
 # AIgentEgo
 
 AIgentEgo is a local-first agent runtime foundation for a developer machine.
-It runs a small FastAPI service next to Ollama and keeps the orchestration
+It runs a small FastAPI service against a provider-neutral LLM boundary, with
+Ollama as the only implemented backend today, and keeps the orchestration
 surface explicit: configuration, provider access, health checks, diagnostics,
 manual deterministic tools, request tracing, logging, and smoke tests are all
 visible in the repository.
@@ -11,9 +12,9 @@ can build, start, pull the configured Ollama models, answer a basic chat
 request, expose deterministic tools, execute an explicitly requested calculator
 tool, and be validated repeatably. It is not yet a complete agent runtime.
 
-## MVP 0.2 Status
+## MVP 0.2 and 0.2.7 Status
 
-Current Milestone (X): MVP 0.2 deterministic tool runtime closure.
+Current Milestone (X): MVP 0.2.7 provider-neutral LLM runtime boundary closure.
 
 Included through MVP 0.2:
 
@@ -37,14 +38,18 @@ Tools in MVP 0.2 are invoked manually through explicit REST calls. The LLM chat
 path does not choose tools, generate structured tool calls, or execute tools
 yet.
 
+MVP 0.2.7 keeps Ollama as the default and only implemented LLM backend while
+moving public configuration and diagnostics toward provider-neutral naming.
+llama.cpp support, structured ToolCalls, and agent-loop behavior remain planned
+future work.
+
 ## Roadmap
 
 The high-level 0.x MVP roadmap is tracked in
 [docs/ROADMAP.md](docs/ROADMAP.md). It separates completed behavior from
-planned future capabilities such as provider-neutral LLM backend selection,
-llama.cpp compatibility, LLM-assisted tool calling, the agent loop, memory,
-RAG, filesystem access, calendar integration, sandboxing, streaming, and CLI
-support.
+planned future capabilities such as llama.cpp compatibility, LLM-assisted tool
+calling, the agent loop, memory, RAG, filesystem access, calendar integration,
+sandboxing, streaming, and CLI support.
 
 ## Prerequisites
 
@@ -95,12 +100,19 @@ the same as the CPU path.
 
 The defaults are chosen to stay practical on smaller local machines:
 
-- `OLLAMA_CHAT_MODEL=llama3.2:3b`
-- `OLLAMA_EMBED_MODEL=nomic-embed-text`
+- `LLM_BACKEND=ollama`
+- `LLM_BASE_URL=http://ollama:11434`
+- `CHAT_MODEL=llama3.2:3b`
+- `EMBEDDING_MODEL=nomic-embed-text`
 
 Runtime settings can be supplied through environment variables or a local
 `.env` file. `.env` is intentionally ignored by Git; use `.env.example` as the
 reference.
+
+`LLM_BACKEND=ollama` is the only supported backend in MVP 0.2.7. The legacy
+`OLLAMA_BASE_URL`, `OLLAMA_CHAT_MODEL`, and `OLLAMA_EMBED_MODEL` names remain
+compatibility aliases for existing local environments, but new configuration
+should use the provider-neutral names above.
 
 ## Available Endpoints
 
@@ -109,7 +121,7 @@ header, AIgentEgo preserves it in the response and in request logs.
 
 ### `GET /health`
 
-Returns API status, Ollama reachability, and the configured chat model.
+Returns API status, provider reachability, and the configured chat model.
 
 ```sh
 curl http://localhost:8080/health
@@ -120,8 +132,9 @@ Example shape:
 ```json
 {
   "status": "ok",
-  "ollama_reachable": true,
-  "chat_model": "llama3.2:3b"
+  "provider_reachable": true,
+  "chat_model": "llama3.2:3b",
+  "ollama_reachable": true
 }
 ```
 
@@ -138,20 +151,26 @@ Example shape:
 ```json
 {
   "status": "ok",
-  "package_version": "0.2.6",
+  "package_version": "0.2.7",
+  "llm_backend": "ollama",
   "llm_provider": "ollama",
-  "ollama_base_url": "http://ollama:11434",
+  "provider_base_url": "http://ollama:11434",
   "chat_model": "llama3.2:3b",
   "embedding_model": "nomic-embed-text",
+  "provider_reachable": true,
+  "ollama_base_url": "http://ollama:11434",
   "ollama_reachable": true
 }
 ```
 
+The `ollama_*` diagnostics fields are retained as compatibility fields while
+the provider-neutral fields are the canonical shape going forward.
+
 ### `POST /chat`
 
 Accepts one user message and returns one non-streaming model response. The chat
-endpoint talks to the configured Ollama model only; it does not choose or
-execute deterministic tools in MVP 0.2.
+endpoint talks to the configured Ollama-backed LLM provider only; it does not
+choose or execute deterministic tools in MVP 0.2.
 
 ```sh
 curl -X POST http://localhost:8080/chat \
@@ -277,9 +296,10 @@ through `POST /tools/execute`, and then cleans up its containers.
 
 ## Next Direction
 
-The next planning step is a provider-neutral LLM runtime boundary. AIgentEgo
-should keep application layers depending on the `LlmProvider` protocol rather
-than concrete Ollama-specific code before structured ToolCall work begins.
+The completed bridge milestone is the provider-neutral LLM runtime boundary.
+AIgentEgo now keeps application layers depending on the `LlmProvider` protocol
+rather than concrete Ollama-specific construction before structured ToolCall
+work begins.
 
 Structured ToolCall support remains the next major behavior milestone after
 that boundary. llama.cpp backend compatibility is planned after structured
