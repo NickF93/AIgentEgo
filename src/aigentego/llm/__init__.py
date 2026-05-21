@@ -19,6 +19,7 @@ from aigentego.llm.errors import (
 )
 from aigentego.llm.factory import build_llm_provider
 from aigentego.llm.ollama_client import OllamaClient
+from aigentego.llm.tool_calls import LlmToolCall, StructuredToolCallOutput
 
 __all__ = [
     "ChatMessage",
@@ -32,8 +33,10 @@ __all__ = [
     "LlmProviderError",
     "LlmResponseError",
     "LlmTimeoutError",
+    "LlmToolCall",
     "ModelInfo",
     "OllamaClient",
+    "StructuredToolCallOutput",
     "UnsupportedLlmBackendError",
     "build_llm_provider",
 ]
