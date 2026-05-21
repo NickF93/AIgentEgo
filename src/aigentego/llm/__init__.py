@@ -22,6 +22,10 @@ from aigentego.llm.errors import (
 )
 from aigentego.llm.factory import build_llm_provider
 from aigentego.llm.ollama_client import OllamaClient
+from aigentego.llm.tool_call_flow import (
+    SingleStepToolCallResult,
+    run_single_step_tool_call,
+)
 from aigentego.llm.tool_call_parser import parse_structured_tool_calls
 from aigentego.llm.tool_call_repair import (
     ToolCallFailureCategory,
@@ -50,6 +54,7 @@ __all__ = [
     "LlmToolCall",
     "ModelInfo",
     "OllamaClient",
+    "SingleStepToolCallResult",
     "StructuredToolCallOutput",
     "ToolCallFailureCategory",
     "ToolCallFailureCode",
@@ -65,4 +70,5 @@ __all__ = [
     "classify_tool_call_failure",
     "decide_tool_call_repair",
     "parse_structured_tool_calls",
+    "run_single_step_tool_call",
 ]
