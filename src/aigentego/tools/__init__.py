@@ -18,6 +18,7 @@ from aigentego.tools.errors import (
 )
 from aigentego.tools.executor import ToolExecutor
 from aigentego.tools.registry import ToolRegistry
+from aigentego.tools.serialization import serialize_tool_definitions
 
 __all__ = [
     "CalculatorTool",
@@ -34,4 +35,5 @@ __all__ = [
     "ToolRegistry",
     "ToolResult",
     "ToolValidationError",
+    "serialize_tool_definitions",
 ]
