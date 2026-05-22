@@ -66,7 +66,7 @@ def test_llamacpp_settings_value_is_accepted_before_provider_exists() -> None:
     assert settings.embedding_model == "local-embed"
 
 
-def test_llamacpp_provider_is_not_constructed_until_adapter_is_implemented() -> None:
+def test_llamacpp_provider_is_not_constructed_until_factory_integration() -> None:
     settings = make_settings(llm_backend=LLAMACPP_BACKEND)
 
     with pytest.raises(UnsupportedLlmBackendError) as exc_info:
