@@ -1,12 +1,12 @@
 import pytest
 
-from aigentego.llm.errors import UnsupportedLlmBackendError
 from aigentego.llm.factory import (
     LLAMACPP_BACKEND,
     OLLAMA_BACKEND,
     build_llm_provider,
     normalize_llm_backend,
 )
+from aigentego.llm.llamacpp_client import LlamaCppProvider
 from aigentego.settings import Settings
 
 LLAMACPP_PROVIDER_ENDPOINTS = (
@@ -66,13 +66,13 @@ def test_llamacpp_settings_value_is_accepted_before_provider_exists() -> None:
     assert settings.embedding_model == "local-embed"
 
 
-def test_llamacpp_provider_is_not_constructed_until_factory_integration() -> None:
+def test_llamacpp_provider_is_constructed_by_factory_integration() -> None:
     settings = make_settings(llm_backend=LLAMACPP_BACKEND)
 
-    with pytest.raises(UnsupportedLlmBackendError) as exc_info:
-        build_llm_provider(settings)
+    provider = build_llm_provider(settings)
 
-    assert exc_info.value.backend == LLAMACPP_BACKEND
+    assert isinstance(provider, LlamaCppProvider)
+    assert provider.provider_name == LLAMACPP_BACKEND
 
 
 def test_llamacpp_contract_targets_llama_server_openai_compatible_endpoints() -> None:

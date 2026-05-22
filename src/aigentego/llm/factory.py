@@ -2,6 +2,7 @@
 
 from aigentego.llm.base import LlmProvider
 from aigentego.llm.errors import UnsupportedLlmBackendError
+from aigentego.llm.llamacpp_client import LlamaCppProvider
 from aigentego.llm.ollama_client import OllamaClient
 from aigentego.settings import Settings
 
@@ -22,6 +23,10 @@ def build_llm_provider(settings: Settings) -> LlmProvider:
             base_url=settings.llm_base_url,
             timeout_seconds=settings.request_timeout_seconds,
         )
+    if backend == LLAMACPP_BACKEND:
+        return LlamaCppProvider(
+            base_url=settings.llm_base_url,
+            timeout_seconds=settings.request_timeout_seconds,
+        )
 
-    # llama.cpp support targets llama-server's OpenAI-compatible endpoints.
     raise UnsupportedLlmBackendError(settings.llm_backend)
