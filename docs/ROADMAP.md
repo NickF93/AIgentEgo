@@ -10,7 +10,7 @@ developer-facing UX.
 
 MVP 0.1, MVP 0.2, MVP 0.2.7, and MVP 0.3 are completed. MVP 0.3 closed
 single-step LLM structured output to deterministic ToolCall handling while
-keeping execution bounded and provider-neutral. MVP 0.3.7 is in progress and
+keeping execution bounded and provider-neutral. MVP 0.3.7 is completed and
 adds optional llama.cpp backend compatibility behind the same `LlmProvider`
 boundary.
 
@@ -67,7 +67,7 @@ multi-turn conversation state.
 | `0.2` | Deterministic tool runtime | Completed | Manual, deterministic tool execution | Execute registered tools through explicit API calls without LLM choice |
 | `0.2.7` | Provider-neutral LLM runtime boundary | Completed | Generic LLM settings, provider factory, and diagnostics | Application layers depend on `LlmProvider`, not a concrete backend |
 | `0.3` | LLM structured output to ToolCall | Completed | Model-produced structured tool calls | Let the LLM request bounded tool calls through validated structured output |
-| `0.3.7` | llama.cpp backend compatibility | In progress | Additional local backend adapter and capability comparison | Compare Ollama and llama.cpp behavior before building the agent loop |
+| `0.3.7` | llama.cpp backend compatibility | Completed | Additional local backend adapter and capability comparison | Compare Ollama and llama.cpp behavior before building the agent loop |
 | `0.4` | Agent loop v1 | Planned | Bounded multi-step agent execution | Run a minimal inspectable agent loop with limits and observations |
 | `0.5` | Persistent conversations and memory | Planned | Local persistence and conversation memory | Resume sessions and inject saved context into chat or agent runs |
 | `0.6` | Notes search, read-only filesystem, and RAG v1 | Planned | Local retrieval over explicit read-only roots | Search notes/files and use retrieved snippets as grounded context |
@@ -192,7 +192,7 @@ High-level sprint blocks:
 
 ## `0.3.7` llama.cpp Backend Compatibility
 
-Status: in progress.
+Status: completed.
 
 This bridge phase comes after structured ToolCall support and before Agent
 Loop v1. Ollama remains the default backend. `LlamaCppProvider` adds an
@@ -205,7 +205,7 @@ runtime compares backend behavior for health, model listing, chat, embeddings,
 structured output handling, error mapping, and operational constraints while
 keeping provider details behind the `LlmProvider` boundary.
 
-Implemented or targeted behavior for this bridge:
+Completed behavior:
 
 - Canonical backend selection with `LLM_BACKEND=llamacpp`.
 - A concrete llama.cpp adapter using llama-server OpenAI-compatible endpoints:

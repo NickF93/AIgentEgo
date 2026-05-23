@@ -18,9 +18,9 @@ is not yet a complete agent runtime.
 
 ## MVP 0.3.7 Status
 
-Current Milestone (X): MVP 0.3.7 llama.cpp backend compatibility.
+Latest completed milestone: MVP 0.3.7 llama.cpp backend compatibility.
 
-Included through MVP 0.3 and the current MVP 0.3.7 bridge work:
+Included through MVP 0.3 and the completed MVP 0.3.7 bridge work:
 
 - Python package skeleton
 - Environment-based runtime settings
@@ -207,7 +207,7 @@ Example shape:
 ```json
 {
   "status": "ok",
-  "package_version": "0.3.0",
+  "package_version": "0.3.7",
   "llm_backend": "ollama",
   "llm_provider": "ollama",
   "provider_base_url": "http://ollama:11434",
@@ -393,6 +393,6 @@ structured JSON, and valid calls still execute only through `ToolExecutor`.
 
 ## Next Direction
 
-The active bridge milestone is llama.cpp backend compatibility. After closure,
-the next planned runtime milestone is Agent Loop v1: a bounded multi-step loop
-with explicit limits and observations.
+The completed bridge milestone is llama.cpp backend compatibility. The next
+planned runtime milestone is Agent Loop v1: a bounded multi-step loop with
+explicit limits and observations.
