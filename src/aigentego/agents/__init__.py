@@ -1,4 +1,4 @@
-"""Provider-neutral agent run contracts."""
+"""Provider-neutral agent run contracts and execution skeleton."""
 
 from aigentego.agents.contracts import (
     AgentRun,
@@ -7,11 +7,23 @@ from aigentego.agents.contracts import (
     AgentStepStatus,
     AgentStepType,
 )
+from aigentego.agents.executor import (
+    AGENT_LOOP_SKELETON_STOP_REASON,
+    MAX_STEPS_REACHED_STOP_REASON,
+    AgentLoopExecutor,
+    AgentLoopLimits,
+    run_agent_loop,
+)
 
 __all__ = [
+    "AGENT_LOOP_SKELETON_STOP_REASON",
     "AgentRun",
     "AgentRunStatus",
+    "AgentLoopExecutor",
+    "AgentLoopLimits",
     "AgentStep",
     "AgentStepStatus",
     "AgentStepType",
+    "MAX_STEPS_REACHED_STOP_REASON",
+    "run_agent_loop",
 ]
