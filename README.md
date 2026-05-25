@@ -2,23 +2,25 @@
 
 AIgentEgo is a local-first agent runtime foundation for a developer machine.
 It runs a small FastAPI service against a provider-neutral LLM boundary, with
-Ollama as the only implemented backend today, and keeps the orchestration
-surface explicit: configuration, provider access, health checks, diagnostics,
-manual deterministic tools, structured ToolCall handling, request tracing,
-logging, and smoke tests are all visible in the repository.
+Ollama as the default backend and optional llama.cpp compatibility behind the
+same `LlmProvider` interface. The orchestration surface stays explicit:
+configuration, provider access, health checks, diagnostics, manual deterministic
+tools, structured ToolCall handling, request tracing, logging, and smoke tests
+are all visible in the repository.
 
 The project is still intentionally narrow. MVP 0.2 proves that the local stack
 can build, start, pull the configured Ollama models, answer a basic chat
 request, expose deterministic tools, execute an explicitly requested calculator
 tool, and be validated repeatably. MVP 0.3 adds provider-neutral structured
-ToolCall handling on top of that deterministic tool substrate. It is not yet a
-complete agent runtime.
+ToolCall handling on top of that deterministic tool substrate. MVP 0.3.7 adds
+optional llama.cpp backend compatibility for that provider-neutral boundary. It
+is not yet a complete agent runtime.
 
-## MVP 0.3 Status
+## MVP 0.3.7 Status
 
-Current Milestone (X): MVP 0.3 LLM structured output to ToolCall closure.
+Latest completed milestone: MVP 0.3.7 llama.cpp backend compatibility.
 
-Included through MVP 0.3:
+Included through MVP 0.3 and the completed MVP 0.3.7 bridge work:
 
 - Python package skeleton
 - Environment-based runtime settings
@@ -27,7 +29,9 @@ Included through MVP 0.3:
 - Automatic Ollama model pull
 - FastAPI runtime API
 - `/health`, `/diagnostics`, and `/chat`
-- Provider-neutral LLM models with an Ollama HTTP client
+- Provider-neutral LLM models with Ollama and llama.cpp provider adapters
+- Ollama as the default LLM backend
+- Optional llama.cpp backend selection through `LLM_BACKEND=llamacpp`
 - Deterministic tool contracts and normalized tool errors
 - Tool registry and deterministic tool executor
 - Calculator tool for safe arithmetic expressions
@@ -59,26 +63,25 @@ The LLM does not directly execute tools. `ToolExecutor` remains the only
 execution mechanism. This is single-step structured tool calling, not a
 multi-step agent loop.
 
-The provider-neutral boundary from MVP 0.2.7 keeps Ollama as the default and
-only implemented LLM backend while moving public configuration and diagnostics
-toward generic LLM naming. llama.cpp support and agent-loop behavior remain
-planned future work.
+MVP 0.3.7 keeps Ollama as the default backend and adds `llamacpp` as an
+optional backend identifier. Application code still depends on `LlmProvider`;
+backend selection remains centralized in the provider factory, and
+llama.cpp-specific HTTP payloads stay inside `LlamaCppProvider`.
 
 ## Roadmap
 
 The high-level 0.x MVP roadmap is tracked in
 [docs/ROADMAP.md](docs/ROADMAP.md). It separates completed behavior from
-planned future capabilities such as llama.cpp compatibility, LLM-assisted tool
-calling beyond the single-step 0.3 flow, the agent loop, memory, RAG,
-filesystem access, calendar integration, sandboxing, streaming, and CLI
-support.
+planned future capabilities such as the agent loop, memory, RAG, filesystem
+access, calendar integration, sandboxing, streaming, and CLI support.
 
 ## Prerequisites
 
 - Python 3.12
 - Docker with Docker Compose v2
 - `make`
-- Enough disk space for the configured Ollama models
+- Enough disk space for the configured Ollama models when using the default
+  Compose stack
 
 For GPU mode, the host also needs a working NVIDIA container runtime. CPU mode
 is the default and does not require GPU support.
@@ -118,7 +121,7 @@ make up-gpu
 This only changes the Ollama service GPU reservation. The rest of the stack is
 the same as the CPU path.
 
-## Model Defaults
+## LLM Backend Configuration
 
 The defaults are chosen to stay practical on smaller local machines:
 
@@ -131,10 +134,41 @@ Runtime settings can be supplied through environment variables or a local
 `.env` file. `.env` is intentionally ignored by Git; use `.env.example` as the
 reference.
 
-`LLM_BACKEND=ollama` is the only supported backend in MVP 0.3. The legacy
-`OLLAMA_BASE_URL`, `OLLAMA_CHAT_MODEL`, and `OLLAMA_EMBED_MODEL` names remain
-compatibility aliases for existing local environments, but new configuration
-should use the provider-neutral names above.
+Supported backend identifiers are:
+
+- `LLM_BACKEND=ollama` for the default Ollama provider
+- `LLM_BACKEND=llamacpp` for the optional llama.cpp provider
+
+The canonical llama.cpp value is `llamacpp`. Alias spellings such as
+`llama.cpp` and `llama_cpp` are not supported. The legacy `OLLAMA_BASE_URL`,
+`OLLAMA_CHAT_MODEL`, and `OLLAMA_EMBED_MODEL` names remain compatibility
+aliases for existing Ollama environments, but new configuration should use the
+provider-neutral names above.
+
+### Optional llama.cpp Backend
+
+The `llamacpp` backend expects a separately managed llama.cpp `llama-server`
+that exposes the OpenAI-compatible endpoints used by `LlamaCppProvider`:
+
+- `GET /health`
+- `GET /v1/models`
+- `POST /v1/chat/completions`
+- `POST /v1/embeddings`
+
+Example host-run API configuration:
+
+```sh
+LLM_BACKEND=llamacpp
+LLM_BASE_URL=http://localhost:8081
+CHAT_MODEL=<model exposed by llama-server>
+EMBEDDING_MODEL=<embedding model exposed by llama-server>
+```
+
+Embeddings are expected to work only when the selected llama.cpp server exposes
+`POST /v1/embeddings` and the configured `EMBEDDING_MODEL` is valid for that
+server. The default Docker Compose stack remains Ollama-first and does not
+start or manage a llama.cpp service. If the API runs inside Docker, set
+`LLM_BASE_URL` to an address that is reachable from the `agent-api` container.
 
 ## Available Endpoints
 
@@ -173,7 +207,7 @@ Example shape:
 ```json
 {
   "status": "ok",
-  "package_version": "0.3.0",
+  "package_version": "0.3.7",
   "llm_backend": "ollama",
   "llm_provider": "ollama",
   "provider_base_url": "http://ollama:11434",
@@ -191,8 +225,8 @@ the provider-neutral fields are the canonical shape going forward.
 ### `POST /chat`
 
 Accepts one user message and returns one non-streaming model response. The chat
-endpoint talks to the configured Ollama-backed LLM provider only; it does not
-invoke the structured ToolCall flow or execute deterministic tools.
+endpoint talks to the configured LLM provider; it does not invoke the
+structured ToolCall flow or execute deterministic tools.
 
 ```sh
 curl -X POST http://localhost:8080/chat \
@@ -301,6 +335,44 @@ configured models, starts the API, checks `/health` and `/diagnostics`, sends a
 real `/chat` request, verifies `GET /tools`, manually executes the calculator
 through `POST /tools/execute`, and then cleans up its containers.
 
+### Optional llama.cpp Manual Validation
+
+llama.cpp validation is optional and local. It is not part of the default
+`make compose-smoke` path.
+
+1. Start `llama-server` separately with a chat model and, if needed, an
+   embedding model.
+2. Confirm the server is reachable:
+
+   ```sh
+   curl http://localhost:8081/health
+   curl http://localhost:8081/v1/models
+   ```
+
+3. Start the API with llama.cpp settings:
+
+   ```sh
+   LLM_BACKEND=llamacpp \
+   LLM_BASE_URL=http://localhost:8081 \
+   CHAT_MODEL=<model exposed by llama-server> \
+   EMBEDDING_MODEL=<embedding model exposed by llama-server> \
+   python -m aigentego.main
+   ```
+
+4. Check the regular provider-neutral endpoints:
+
+   ```sh
+   curl http://localhost:8080/health
+   curl http://localhost:8080/diagnostics
+   curl -X POST http://localhost:8080/chat \
+     -H 'Content-Type: application/json' \
+     -d '{"message":"Reply with one short sentence."}'
+   ```
+
+Structured ToolCall compatibility for llama.cpp is covered by deterministic
+mocked tests. The LLM still requests tools only through parsed and validated
+structured JSON, and valid calls still execute only through `ToolExecutor`.
+
 ## Current Limitations
 
 - `/chat` supports one public user message per request and non-streaming
@@ -309,8 +381,10 @@ through `POST /tools/execute`, and then cleans up its containers.
 - Structured ToolCall support is provider-neutral and single-step; no public
   `/agent/run` endpoint or multi-step agent loop exists yet.
 - There is no persistent memory store, notes search, read-only filesystem tool,
-  calendar adapter, database integration, sandbox, CLI, MCP, llama.cpp backend,
-  or streaming support.
+  calendar adapter, database integration, sandbox, CLI, MCP, or streaming
+  support.
+- llama.cpp is optional and externally managed; the default Compose stack does
+  not include a llama.cpp service or automatic GGUF model download.
 - Ollama model pull and first-response time depend on local network, disk, CPU,
   RAM, and GPU availability.
 - Small laptops or machines with about 4 GB VRAM should keep the default
@@ -319,7 +393,6 @@ through `POST /tools/execute`, and then cleans up its containers.
 
 ## Next Direction
 
-The completed behavior milestone is provider-neutral structured ToolCall
-support. llama.cpp backend compatibility remains planned after structured
-ToolCall support and before Agent Loop v1, so backend behavior can be compared
-before the first bounded multi-step loop is built.
+The completed bridge milestone is llama.cpp backend compatibility. The next
+planned runtime milestone is Agent Loop v1: a bounded multi-step loop with
+explicit limits and observations.

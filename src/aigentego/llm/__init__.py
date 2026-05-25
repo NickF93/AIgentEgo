@@ -21,6 +21,7 @@ from aigentego.llm.errors import (
     UnsupportedLlmBackendError,
 )
 from aigentego.llm.factory import build_llm_provider
+from aigentego.llm.llamacpp_client import LlamaCppProvider
 from aigentego.llm.ollama_client import OllamaClient
 from aigentego.llm.tool_answer_synthesis import (
     ToolAnswerSynthesisResult,
@@ -56,6 +57,7 @@ __all__ = [
     "LlmResponseError",
     "LlmTimeoutError",
     "LlmToolCall",
+    "LlamaCppProvider",
     "ModelInfo",
     "OllamaClient",
     "SingleStepToolCallResult",

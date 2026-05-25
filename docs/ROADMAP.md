@@ -10,7 +10,9 @@ developer-facing UX.
 
 MVP 0.1, MVP 0.2, MVP 0.2.7, and MVP 0.3 are completed. MVP 0.3 closed
 single-step LLM structured output to deterministic ToolCall handling while
-keeping execution bounded and provider-neutral.
+keeping execution bounded and provider-neutral. MVP 0.3.7 is completed and
+adds optional llama.cpp backend compatibility behind the same `LlmProvider`
+boundary.
 
 MVP 0.1 provides the local LLM runtime foundation:
 
@@ -44,9 +46,9 @@ MVP 0.2 adds the deterministic tool runtime:
 - README documentation for explicit API-driven tools
 
 AIgentEgo is still not a complete agent runtime. The following capabilities are
-not implemented yet: llama.cpp backend support, multi-step agent loop, memory,
-RAG, notes search, file access, calendar integration, Python sandbox, CLI,
-streaming, and persisted multi-turn conversation state.
+not implemented yet: multi-step agent loop, memory, RAG, notes search, file
+access, calendar integration, Python sandbox, CLI, streaming, and persisted
+multi-turn conversation state.
 
 ## Roadmap Principles
 
@@ -65,7 +67,7 @@ streaming, and persisted multi-turn conversation state.
 | `0.2` | Deterministic tool runtime | Completed | Manual, deterministic tool execution | Execute registered tools through explicit API calls without LLM choice |
 | `0.2.7` | Provider-neutral LLM runtime boundary | Completed | Generic LLM settings, provider factory, and diagnostics | Application layers depend on `LlmProvider`, not a concrete backend |
 | `0.3` | LLM structured output to ToolCall | Completed | Model-produced structured tool calls | Let the LLM request bounded tool calls through validated structured output |
-| `0.3.7` | llama.cpp backend compatibility | Planned | Additional local backend adapter and capability comparison | Compare Ollama and llama.cpp behavior before building the agent loop |
+| `0.3.7` | llama.cpp backend compatibility | Completed | Additional local backend adapter and capability comparison | Compare Ollama and llama.cpp behavior before building the agent loop |
 | `0.4` | Agent loop v1 | Planned | Bounded multi-step agent execution | Run a minimal inspectable agent loop with limits and observations |
 | `0.5` | Persistent conversations and memory | Planned | Local persistence and conversation memory | Resume sessions and inject saved context into chat or agent runs |
 | `0.6` | Notes search, read-only filesystem, and RAG v1 | Planned | Local retrieval over explicit read-only roots | Search notes/files and use retrieved snippets as grounded context |
@@ -141,12 +143,12 @@ Boundary work:
 Desired dependency direction:
 
 ```text
-FastAPI routes / future structured ToolCall flow / future agent loop / future RAG
+FastAPI routes / structured ToolCall flow / future agent loop / future RAG
   -> LlmProvider protocol
   -> provider factory
   -> concrete provider adapter:
        - OllamaClient
-       - future LlamaCppProvider
+       - LlamaCppProvider
 ```
 
 Rules for this boundary:
@@ -190,31 +192,35 @@ High-level sprint blocks:
 
 ## `0.3.7` llama.cpp Backend Compatibility
 
-Status: planned.
+Status: completed.
 
 This bridge phase comes after structured ToolCall support and before Agent
-Loop v1. Ollama remains the default backend. A future `LlamaCppProvider` is
-intended for CPU-only, low-RAM, edge, GGUF-controlled, or benchmarking-oriented
-deployments.
+Loop v1. Ollama remains the default backend. `LlamaCppProvider` adds an
+optional adapter for CPU-only, low-RAM, edge, GGUF-controlled, or
+benchmarking-oriented deployments that already run a compatible llama.cpp
+server.
 
 The goal is compatibility evidence before building the full agent loop. The
-runtime should compare backend behavior for chat, embeddings, structured output
-reliability, error handling, and operational constraints while keeping provider
-details behind the `LlmProvider` boundary.
+runtime compares backend behavior for health, model listing, chat, embeddings,
+structured output handling, error mapping, and operational constraints while
+keeping provider details behind the `LlmProvider` boundary.
 
-Provider capability metadata may be introduced if real backend differences
-require it:
+Completed behavior:
 
-- `supports_chat`
-- `supports_embeddings`
-- `supports_streaming`
-- `supports_json_mode`
-- `supports_schema_constrained_output`
-- `supports_tool_calling_api`
+- Canonical backend selection with `LLM_BACKEND=llamacpp`.
+- A concrete llama.cpp adapter using llama-server OpenAI-compatible endpoints:
+  `GET /health`, `GET /v1/models`, `POST /v1/chat/completions`, and
+  `POST /v1/embeddings`.
+- Provider factory integration so application code continues to depend on
+  `LlmProvider`.
+- Deterministic mocked compatibility tests for the structured ToolCall flow and
+  final answer synthesis through llama.cpp-shaped chat responses.
+- Documentation and manual validation guidance without making llama.cpp part of
+  the default Docker Compose stack.
 
-Any additional capability flag should be justified by an actual backend
-difference. This milestone must not introduce the agent loop, memory, RAG, CLI,
-or streaming UX.
+This milestone does not introduce provider capability metadata, the agent loop,
+memory, RAG, CLI, streaming UX, MCP, public agent endpoints, or placeholder
+future modules.
 
 ## `0.4` Agent Loop v1
 
