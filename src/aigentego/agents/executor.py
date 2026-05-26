@@ -21,12 +21,22 @@ from aigentego.llm import (
     ToolCallValidationError,
     parse_structured_tool_calls,
 )
-from aigentego.tools import ToolRegistry, serialize_tool_definitions
+from aigentego.tools import (
+    ToolCall,
+    ToolContext,
+    ToolExecutor,
+    ToolRegistry,
+    ToolResult,
+    serialize_tool_definitions,
+)
 
 AGENT_LOOP_SKELETON_STOP_REASON = "agent_loop_skeleton_has_no_step_handlers"
 MAX_STEPS_REACHED_STOP_REASON = "max_steps_reached"
 NO_TOOL_CALLS_GENERATED_STOP_REASON = "no_tool_calls_generated"
 TOOL_CALLS_GENERATED_STOP_REASON = "tool_calls_generated_execution_not_integrated"
+TOOL_EXECUTION_COMPLETED_STOP_REASON = (
+    "tool_execution_completed_synthesis_not_integrated"
+)
 TOOL_CALL_GENERATION_CONFIG_ERROR = (
     "structured tool-call generation requires provider, model, and registry"
 )
@@ -46,6 +56,7 @@ class _ToolCallGenerationConfig:
     model: str
     registry: ToolRegistry
     retry_policy: ToolCallRetryPolicy
+    tool_executor: ToolExecutor | None
 
 
 class AgentLoopExecutor:
@@ -59,6 +70,7 @@ class AgentLoopExecutor:
         model: str | None = None,
         registry: ToolRegistry | None = None,
         retry_policy: ToolCallRetryPolicy | None = None,
+        tool_executor: ToolExecutor | None = None,
     ) -> None:
         self._limits = limits if limits is not None else AgentLoopLimits()
         self._provider = provider
@@ -67,6 +79,7 @@ class AgentLoopExecutor:
         self._retry_policy = retry_policy if retry_policy is not None else (
             ToolCallRetryPolicy(max_attempts=1)
         )
+        self._tool_executor = tool_executor
         self._validate_generation_config(
             provider=self._provider,
             model=self._model,
@@ -88,6 +101,7 @@ class AgentLoopExecutor:
         model: str | None = None,
         registry: ToolRegistry | None = None,
         retry_policy: ToolCallRetryPolicy | None = None,
+        tool_executor: ToolExecutor | None = None,
     ) -> AgentRun:
         """Start one bounded agent run and perform at most one model step."""
         generation_config = self._resolve_generation_config(
@@ -95,6 +109,7 @@ class AgentLoopExecutor:
             model=model,
             registry=registry,
             retry_policy=retry_policy,
+            tool_executor=tool_executor,
         )
         if generation_config is not None and self._limits.max_steps > 0:
             return await self._generate_tool_calls(
@@ -153,20 +168,45 @@ class AgentLoopExecutor:
                 repair_decision=repair_decision,
             )
 
+        steps = [
+            AgentStep(
+                index=0,
+                step_type=AgentStepType.MODEL,
+                status=AgentStepStatus.SUCCEEDED,
+                model_summary=_tool_call_generation_summary(len(tool_calls)),
+                tool_calls=tool_calls,
+            ),
+        ]
+        if config.tool_executor is not None and tool_calls:
+            tool_context = ToolContext(request_id=request_id)
+            for tool_call in tool_calls:
+                tool_result = await config.tool_executor.execute(
+                    tool_call,
+                    tool_context,
+                )
+                steps.append(
+                    _tool_execution_step(
+                        index=len(steps),
+                        tool_call=tool_call,
+                        tool_result=tool_result,
+                        request_id=request_id,
+                    ),
+                )
+            return AgentRun(
+                run_id=run_id,
+                request_id=request_id,
+                user_message=user_message,
+                status=AgentRunStatus.STOPPED,
+                steps=steps,
+                stop_reason=TOOL_EXECUTION_COMPLETED_STOP_REASON,
+            )
+
         return AgentRun(
             run_id=run_id,
             request_id=request_id,
             user_message=user_message,
             status=AgentRunStatus.STOPPED,
-            steps=[
-                AgentStep(
-                    index=0,
-                    step_type=AgentStepType.MODEL,
-                    status=AgentStepStatus.SUCCEEDED,
-                    model_summary=_tool_call_generation_summary(len(tool_calls)),
-                    tool_calls=tool_calls,
-                ),
-            ],
+            steps=steps,
             stop_reason=_tool_call_generation_stop_reason(len(tool_calls)),
         )
 
@@ -177,10 +217,14 @@ class AgentLoopExecutor:
         model: str | None,
         registry: ToolRegistry | None,
         retry_policy: ToolCallRetryPolicy | None,
+        tool_executor: ToolExecutor | None,
     ) -> _ToolCallGenerationConfig | None:
         resolved_provider = provider if provider is not None else self._provider
         resolved_model = model if model is not None else self._model
         resolved_registry = registry if registry is not None else self._registry
+        resolved_tool_executor = (
+            tool_executor if tool_executor is not None else self._tool_executor
+        )
 
         self._validate_generation_config(
             provider=resolved_provider,
@@ -207,6 +251,7 @@ class AgentLoopExecutor:
             retry_policy=(
                 retry_policy if retry_policy is not None else self._retry_policy
             ),
+            tool_executor=resolved_tool_executor,
         )
 
     def _validate_generation_config(
@@ -239,6 +284,7 @@ async def run_agent_loop(
     model: str | None = None,
     registry: ToolRegistry | None = None,
     retry_policy: ToolCallRetryPolicy | None = None,
+    tool_executor: ToolExecutor | None = None,
 ) -> AgentRun:
     """Run the bounded agent loop once."""
     executor = AgentLoopExecutor(
@@ -247,6 +293,7 @@ async def run_agent_loop(
         model=model,
         registry=registry,
         retry_policy=retry_policy,
+        tool_executor=tool_executor,
     )
     return await executor.run(
         user_message,
@@ -297,6 +344,38 @@ def _build_tool_call_generation_request(
     )
 
 
+def _tool_execution_step(
+    *,
+    index: int,
+    tool_call: ToolCall,
+    tool_result: ToolResult,
+    request_id: str | None,
+) -> AgentStep:
+    status = (
+        AgentStepStatus.SUCCEEDED
+        if tool_result.success
+        else AgentStepStatus.FAILED
+    )
+    error_detail = (
+        None
+        if tool_result.success
+        else "tool execution returned a failed result"
+    )
+    return AgentStep(
+        index=index,
+        step_type=AgentStepType.TOOL,
+        status=status,
+        tool_call=tool_call,
+        tool_result=tool_result,
+        observation={
+            "source": "tool_executor",
+            "request_id": request_id,
+            "success": tool_result.success,
+        },
+        error_detail=error_detail,
+    )
+
+
 def _tool_call_generation_summary(tool_call_count: int) -> str:
     if tool_call_count == 0:
         return "model produced no structured tool calls"
@@ -316,6 +395,7 @@ __all__ = [
     "MAX_STEPS_REACHED_STOP_REASON",
     "NO_TOOL_CALLS_GENERATED_STOP_REASON",
     "TOOL_CALLS_GENERATED_STOP_REASON",
+    "TOOL_EXECUTION_COMPLETED_STOP_REASON",
     "TOOL_CALL_GENERATION_CONFIG_ERROR",
     "AgentLoopExecutor",
     "AgentLoopLimits",
