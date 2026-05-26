@@ -10,6 +10,9 @@ from aigentego.agents.contracts import (
 from aigentego.agents.executor import (
     AGENT_LOOP_SKELETON_STOP_REASON,
     MAX_STEPS_REACHED_STOP_REASON,
+    NO_TOOL_CALLS_GENERATED_STOP_REASON,
+    TOOL_CALL_GENERATION_CONFIG_ERROR,
+    TOOL_CALLS_GENERATED_STOP_REASON,
     AgentLoopExecutor,
     AgentLoopLimits,
     run_agent_loop,
@@ -25,5 +28,8 @@ __all__ = [
     "AgentStepStatus",
     "AgentStepType",
     "MAX_STEPS_REACHED_STOP_REASON",
+    "NO_TOOL_CALLS_GENERATED_STOP_REASON",
+    "TOOL_CALLS_GENERATED_STOP_REASON",
+    "TOOL_CALL_GENERATION_CONFIG_ERROR",
     "run_agent_loop",
 ]

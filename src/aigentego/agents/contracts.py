@@ -48,6 +48,7 @@ class AgentStep(BaseModel):
     step_type: AgentStepType
     status: AgentStepStatus
     model_summary: str | None = None
+    tool_calls: list[ToolCall] = Field(default_factory=list)
     tool_call: ToolCall | None = None
     tool_result: ToolResult | None = None
     observation: dict[str, Any] | None = None

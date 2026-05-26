@@ -104,9 +104,11 @@ def test_agent_step_can_represent_model_step() -> None:
         step_type=AgentStepType.MODEL,
         status=AgentStepStatus.SUCCEEDED,
         model_summary="model produced a structured tool-call request",
+        tool_calls=[tool_call()],
     )
 
     assert step.model_summary == "model produced a structured tool-call request"
+    assert step.tool_calls == [tool_call()]
     assert step.tool_call is None
     assert step.tool_result is None
 
@@ -229,6 +231,7 @@ def test_models_serialize_to_json_compatible_data() -> None:
                 "step_type": "tool",
                 "status": "succeeded",
                 "model_summary": None,
+                "tool_calls": [],
                 "tool_call": {
                     "tool_name": "calculator",
                     "arguments": {"expression": "2 + 2"},
