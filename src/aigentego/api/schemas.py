@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from aigentego.agents import AgentLoopLimits
 from aigentego.tools import ToolDefinition, ToolErrorDetail
 
 
@@ -52,6 +53,47 @@ class ChatApiResponse(BaseModel):
     request_id: str
     model: str
     message: str
+
+
+class AgentRunApiRequest(BaseModel):
+    """Public bounded agent run request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=1)
+    max_steps: int | None = Field(default=None, ge=0)
+    max_tool_errors: int | None = Field(default=None, ge=0)
+    timeout_seconds: float | None = Field(default=None, gt=0)
+
+    @field_validator("message")
+    @classmethod
+    def strip_message(cls, value: str) -> str:
+        """Reject blank messages after trimming surrounding whitespace."""
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("message must not be blank")
+        return stripped
+
+    def to_limits(self) -> AgentLoopLimits:
+        """Build bounded loop limits from supplied request overrides."""
+        default_limits = AgentLoopLimits()
+        return AgentLoopLimits(
+            max_steps=(
+                self.max_steps
+                if self.max_steps is not None
+                else default_limits.max_steps
+            ),
+            max_tool_errors=(
+                self.max_tool_errors
+                if self.max_tool_errors is not None
+                else default_limits.max_tool_errors
+            ),
+            timeout_seconds=(
+                self.timeout_seconds
+                if self.timeout_seconds is not None
+                else default_limits.timeout_seconds
+            ),
+        )
 
 
 class ApiErrorResponse(BaseModel):

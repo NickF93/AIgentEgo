@@ -8,11 +8,12 @@ developer-facing UX.
 
 ## Current Status
 
-MVP 0.1, MVP 0.2, MVP 0.2.7, and MVP 0.3 are completed. MVP 0.3 closed
-single-step LLM structured output to deterministic ToolCall handling while
-keeping execution bounded and provider-neutral. MVP 0.3.7 is completed and
-adds optional llama.cpp backend compatibility behind the same `LlmProvider`
-boundary.
+MVP 0.1, MVP 0.2, MVP 0.2.7, MVP 0.3, MVP 0.3.7, and MVP 0.4 are completed.
+MVP 0.3 closed single-step LLM structured output to deterministic ToolCall
+handling while keeping execution bounded and provider-neutral. MVP 0.3.7 added
+optional llama.cpp backend compatibility behind the same `LlmProvider`
+boundary. MVP 0.4 added bounded Agent Loop v1 with inspectable `AgentRun` and
+`AgentStep` state.
 
 MVP 0.1 provides the local LLM runtime foundation:
 
@@ -46,9 +47,9 @@ MVP 0.2 adds the deterministic tool runtime:
 - README documentation for explicit API-driven tools
 
 AIgentEgo is still not a complete agent runtime. The following capabilities are
-not implemented yet: multi-step agent loop, memory, RAG, notes search, file
-access, calendar integration, Python sandbox, CLI, streaming, and persisted
-multi-turn conversation state.
+not implemented yet: persistent memory, RAG, notes search, file access, calendar
+integration, Python sandbox, CLI, streaming, MCP, live external integrations,
+and persisted multi-turn conversation state.
 
 ## Roadmap Principles
 
@@ -68,7 +69,7 @@ multi-turn conversation state.
 | `0.2.7` | Provider-neutral LLM runtime boundary | Completed | Generic LLM settings, provider factory, and diagnostics | Application layers depend on `LlmProvider`, not a concrete backend |
 | `0.3` | LLM structured output to ToolCall | Completed | Model-produced structured tool calls | Let the LLM request bounded tool calls through validated structured output |
 | `0.3.7` | llama.cpp backend compatibility | Completed | Additional local backend adapter and capability comparison | Compare Ollama and llama.cpp behavior before building the agent loop |
-| `0.4` | Agent loop v1 | Planned | Bounded multi-step agent execution | Run a minimal inspectable agent loop with limits and observations |
+| `0.4` | Agent loop v1 | Completed | Bounded inspectable agent execution | Run a minimal agent loop with limits, observations, and `/agent/run` |
 | `0.5` | Persistent conversations and memory | Planned | Local persistence and conversation memory | Resume sessions and inject saved context into chat or agent runs |
 | `0.6` | Notes search, read-only filesystem, and RAG v1 | Planned | Local retrieval over explicit read-only roots | Search notes/files and use retrieved snippets as grounded context |
 | `0.7` | Calendar integration | Planned | Calendar query tools and adapters | Query local/fake calendars first, with approval-gated write intent later |
@@ -224,11 +225,19 @@ future modules.
 
 ## `0.4` Agent Loop v1
 
-Status: planned.
+Status: completed.
 
 This is the first true minimal agent milestone. The loop must be bounded, and
 safety limits such as max steps, timeout, and max tool errors are part of the
 milestone. Persistent memory and RAG are not required yet.
+
+MVP 0.4 implemented provider-neutral `AgentRun` and `AgentStep` contracts, a
+bounded v1 executor, structured ToolCall generation inside the loop,
+deterministic `ToolExecutor` observations, final answer synthesis, explicit
+limit-triggered stop/failure behavior, and a minimal `POST /agent/run` API.
+The loop remains bounded and inspectable; it does not add persistent memory,
+RAG, filesystem access, calendar integration, sandboxing, CLI, streaming, MCP,
+or live external integrations.
 
 High-level sprint blocks:
 
