@@ -1,7 +1,9 @@
 """Minimal provider-neutral executor for bounded agent runs."""
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
+from time import monotonic
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -27,6 +29,7 @@ from aigentego.llm import (
 from aigentego.tools import (
     ToolCall,
     ToolContext,
+    ToolExecutionError,
     ToolExecutor,
     ToolRegistry,
     ToolResult,
@@ -35,6 +38,8 @@ from aigentego.tools import (
 
 AGENT_LOOP_SKELETON_STOP_REASON = "agent_loop_skeleton_has_no_step_handlers"
 MAX_STEPS_REACHED_STOP_REASON = "max_steps_reached"
+MAX_TOOL_ERRORS_REACHED_STOP_REASON = "max_tool_errors_reached"
+TIMEOUT_REACHED_STOP_REASON = "timeout_reached"
 NO_TOOL_CALLS_GENERATED_STOP_REASON = "no_tool_calls_generated"
 TOOL_CALLS_GENERATED_STOP_REASON = "tool_calls_generated_execution_not_integrated"
 TOOL_EXECUTION_COMPLETED_STOP_REASON = (
@@ -45,6 +50,7 @@ TOOL_CALL_GENERATION_CONFIG_ERROR = (
 )
 FINAL_ANSWER_SYNTHESIS_SUMMARY = "final answer synthesized"
 FINAL_ANSWER_SYNTHESIS_FAILED_ERROR_DETAIL = "final answer synthesis failed"
+TOOL_CALL_GENERATION_FAILED_ERROR_DETAIL = "structured tool-call generation failed"
 
 
 class AgentLoopLimits(BaseModel):
@@ -52,7 +58,9 @@ class AgentLoopLimits(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    max_steps: int = Field(default=1, ge=0)
+    max_steps: int = Field(default=8, ge=0)
+    max_tool_errors: int = Field(default=3, ge=0)
+    timeout_seconds: float = Field(default=30.0, gt=0)
 
 
 @dataclass(frozen=True)
@@ -76,6 +84,7 @@ class AgentLoopExecutor:
         registry: ToolRegistry | None = None,
         retry_policy: ToolCallRetryPolicy | None = None,
         tool_executor: ToolExecutor | None = None,
+        clock: Callable[[], float] | None = None,
     ) -> None:
         self._limits = limits if limits is not None else AgentLoopLimits()
         self._provider = provider
@@ -85,6 +94,7 @@ class AgentLoopExecutor:
             ToolCallRetryPolicy(max_attempts=1)
         )
         self._tool_executor = tool_executor
+        self._clock = clock if clock is not None else monotonic
         self._validate_generation_config(
             provider=self._provider,
             model=self._model,
@@ -109,6 +119,7 @@ class AgentLoopExecutor:
         tool_executor: ToolExecutor | None = None,
     ) -> AgentRun:
         """Start one bounded agent run and perform at most one model step."""
+        started_at = self._clock()
         generation_config = self._resolve_generation_config(
             provider=provider,
             model=model,
@@ -116,12 +127,22 @@ class AgentLoopExecutor:
             retry_policy=retry_policy,
             tool_executor=tool_executor,
         )
-        if generation_config is not None and self._limits.max_steps > 0:
+        if generation_config is not None:
+            stop_reason = self._limit_stop_reason([], started_at=started_at)
+            if stop_reason is not None:
+                return _stopped_run(
+                    run_id=run_id,
+                    request_id=request_id,
+                    user_message=user_message,
+                    steps=[],
+                    stop_reason=stop_reason,
+                )
             return await self._generate_tool_calls(
                 generation_config,
                 user_message=user_message,
                 run_id=run_id,
                 request_id=request_id,
+                started_at=started_at,
             )
 
         return AgentRun(
@@ -140,14 +161,45 @@ class AgentLoopExecutor:
         user_message: str,
         run_id: str,
         request_id: str | None,
+        started_at: float,
     ) -> AgentRun:
-        response = await config.provider.chat(
-            _build_tool_call_generation_request(
-                model=config.model,
+        try:
+            response = await config.provider.chat(
+                _build_tool_call_generation_request(
+                    model=config.model,
+                    user_message=user_message,
+                    registry=config.registry,
+                ),
+            )
+        except LlmProviderError as error:
+            error_detail = f"{TOOL_CALL_GENERATION_FAILED_ERROR_DETAIL}: {error}"
+            return AgentRun(
+                run_id=run_id,
+                request_id=request_id,
                 user_message=user_message,
-                registry=config.registry,
-            ),
-        )
+                status=AgentRunStatus.FAILED,
+                steps=[
+                    AgentStep(
+                        index=0,
+                        step_type=AgentStepType.MODEL,
+                        status=AgentStepStatus.FAILED,
+                        model_summary=TOOL_CALL_GENERATION_FAILED_ERROR_DETAIL,
+                        error_detail=error_detail,
+                    ),
+                ],
+                error_detail=error_detail,
+            )
+
+        steps: list[AgentStep] = []
+        stop_reason = self._limit_stop_reason(steps, started_at=started_at)
+        if stop_reason is not None:
+            return _stopped_run(
+                run_id=run_id,
+                request_id=request_id,
+                user_message=user_message,
+                steps=steps,
+                stop_reason=stop_reason,
+            )
 
         try:
             tool_calls = parse_structured_tool_calls(
@@ -172,6 +224,7 @@ class AgentLoopExecutor:
                     run_id=run_id,
                     request_id=request_id,
                     steps=steps,
+                    started_at=started_at,
                     repair_decision=repair_decision,
                 )
             return AgentRun(
@@ -195,7 +248,20 @@ class AgentLoopExecutor:
         if config.tool_executor is not None and tool_calls:
             tool_context = ToolContext(request_id=request_id)
             for tool_call in tool_calls:
-                tool_result = await config.tool_executor.execute(
+                stop_reason = self._limit_stop_reason(
+                    steps,
+                    started_at=started_at,
+                )
+                if stop_reason is not None:
+                    return _stopped_run(
+                        run_id=run_id,
+                        request_id=request_id,
+                        user_message=user_message,
+                        steps=steps,
+                        stop_reason=stop_reason,
+                    )
+                tool_result = await _execute_tool_call_safely(
+                    config.tool_executor,
                     tool_call,
                     tool_context,
                 )
@@ -207,6 +273,14 @@ class AgentLoopExecutor:
                         request_id=request_id,
                     ),
                 )
+                if self._tool_error_limit_reached(steps):
+                    return _stopped_run(
+                        run_id=run_id,
+                        request_id=request_id,
+                        user_message=user_message,
+                        steps=steps,
+                        stop_reason=MAX_TOOL_ERRORS_REACHED_STOP_REASON,
+                    )
         if config.tool_executor is not None:
             return await self._synthesize_final_answer(
                 config,
@@ -214,6 +288,7 @@ class AgentLoopExecutor:
                 run_id=run_id,
                 request_id=request_id,
                 steps=steps,
+                started_at=started_at,
             )
 
         return AgentRun(
@@ -288,6 +363,28 @@ class AgentLoopExecutor:
             return MAX_STEPS_REACHED_STOP_REASON
         return AGENT_LOOP_SKELETON_STOP_REASON
 
+    def _limit_stop_reason(
+        self,
+        steps: list[AgentStep],
+        *,
+        started_at: float,
+    ) -> str | None:
+        if len(steps) >= self._limits.max_steps:
+            return MAX_STEPS_REACHED_STOP_REASON
+        if self._clock() - started_at >= self._limits.timeout_seconds:
+            return TIMEOUT_REACHED_STOP_REASON
+        return None
+
+    def _tool_error_limit_reached(self, steps: list[AgentStep]) -> bool:
+        failed_tool_results = sum(
+            1
+            for step in steps
+            if step.step_type is AgentStepType.TOOL
+            and step.tool_result is not None
+            and not step.tool_result.success
+        )
+        return failed_tool_results > self._limits.max_tool_errors
+
     async def _synthesize_final_answer(
         self,
         config: _ToolCallGenerationConfig,
@@ -296,8 +393,20 @@ class AgentLoopExecutor:
         run_id: str,
         request_id: str | None,
         steps: list[AgentStep],
+        started_at: float,
         repair_decision: ToolCallRepairDecision | None = None,
     ) -> AgentRun:
+        stop_reason = self._limit_stop_reason(steps, started_at=started_at)
+        if stop_reason is not None:
+            return _stopped_run(
+                run_id=run_id,
+                request_id=request_id,
+                user_message=user_message,
+                steps=steps,
+                stop_reason=stop_reason,
+                repair_decision=repair_decision,
+            )
+
         try:
             response = await config.provider.chat(
                 _build_final_answer_synthesis_request(
@@ -511,6 +620,24 @@ def _tool_execution_step(
     )
 
 
+async def _execute_tool_call_safely(
+    executor: ToolExecutor,
+    tool_call: ToolCall,
+    tool_context: ToolContext,
+) -> ToolResult:
+    try:
+        return await executor.execute(tool_call, tool_context)
+    except Exception:
+        return ToolResult(
+            tool_name=tool_call.tool_name,
+            success=False,
+            error=ToolExecutionError(
+                "tool execution failed",
+                tool_name=tool_call.tool_name,
+            ).to_detail(),
+        )
+
+
 def _final_answer_step(
     *,
     index: int,
@@ -570,15 +697,38 @@ def _tool_call_generation_stop_reason(tool_call_count: int) -> str:
     return TOOL_CALLS_GENERATED_STOP_REASON
 
 
+def _stopped_run(
+    *,
+    run_id: str,
+    request_id: str | None,
+    user_message: str,
+    steps: list[AgentStep],
+    stop_reason: str,
+    repair_decision: ToolCallRepairDecision | None = None,
+) -> AgentRun:
+    return AgentRun(
+        run_id=run_id,
+        request_id=request_id,
+        user_message=user_message,
+        status=AgentRunStatus.STOPPED,
+        steps=steps,
+        stop_reason=stop_reason,
+        repair_decision=repair_decision,
+    )
+
+
 __all__ = [
     "AGENT_LOOP_SKELETON_STOP_REASON",
     "MAX_STEPS_REACHED_STOP_REASON",
+    "MAX_TOOL_ERRORS_REACHED_STOP_REASON",
+    "TIMEOUT_REACHED_STOP_REASON",
     "NO_TOOL_CALLS_GENERATED_STOP_REASON",
     "TOOL_CALLS_GENERATED_STOP_REASON",
     "TOOL_EXECUTION_COMPLETED_STOP_REASON",
     "TOOL_CALL_GENERATION_CONFIG_ERROR",
     "FINAL_ANSWER_SYNTHESIS_FAILED_ERROR_DETAIL",
     "FINAL_ANSWER_SYNTHESIS_SUMMARY",
+    "TOOL_CALL_GENERATION_FAILED_ERROR_DETAIL",
     "AgentLoopExecutor",
     "AgentLoopLimits",
     "run_agent_loop",
