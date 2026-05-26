@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from aigentego import __version__
+from aigentego.agents import AgentLoopExecutor, AgentRun
 from aigentego.api.dependencies import (
     get_llm_provider,
     get_settings,
@@ -12,6 +13,7 @@ from aigentego.api.dependencies import (
     get_tool_registry,
 )
 from aigentego.api.schemas import (
+    AgentRunApiRequest,
     ApiErrorResponse,
     ChatApiRequest,
     ChatApiResponse,
@@ -119,6 +121,31 @@ async def chat(
         request_id=request_id,
         model=provider_response.model,
         message=provider_response.message.content,
+    )
+
+
+@router.post("/agent/run", response_model=AgentRun)
+async def run_agent(
+    request: Request,
+    payload: AgentRunApiRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+    provider: Annotated[LlmProvider, Depends(get_llm_provider)],
+    registry: Annotated[ToolRegistry, Depends(get_tool_registry)],
+    executor: Annotated[ToolExecutor, Depends(get_tool_executor)],
+) -> AgentRun:
+    """Run one bounded, inspectable agent pass."""
+    request_id = get_request_id(request)
+    agent_executor = AgentLoopExecutor(
+        limits=payload.to_limits(),
+        provider=provider,
+        model=settings.chat_model,
+        registry=registry,
+        tool_executor=executor,
+    )
+    return await agent_executor.run(
+        payload.message,
+        run_id=request_id,
+        request_id=request_id,
     )
 
 
