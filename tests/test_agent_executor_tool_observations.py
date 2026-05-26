@@ -5,8 +5,6 @@ from typing import Any
 
 from aigentego.agents import (
     AGENT_LOOP_SKELETON_STOP_REASON,
-    NO_TOOL_CALLS_GENERATED_STOP_REASON,
-    TOOL_EXECUTION_COMPLETED_STOP_REASON,
     AgentLoopExecutor,
     AgentRunStatus,
     AgentStepStatus,
@@ -37,8 +35,13 @@ from aigentego.tools import (
 class FakeProvider:
     provider_name = "fake"
 
-    def __init__(self, content: str = '{"tool_calls": []}') -> None:
-        self.content = content
+    def __init__(
+        self,
+        content: str = '{"tool_calls": []}',
+        *,
+        final_content: str = "final answer",
+    ) -> None:
+        self.contents = [content, final_content]
         self.chat_calls = 0
         self.chat_request: ChatRequest | None = None
 
@@ -51,9 +54,10 @@ class FakeProvider:
     async def chat(self, request: ChatRequest) -> ChatResponse:
         self.chat_calls += 1
         self.chat_request = request
+        content = self.contents[min(self.chat_calls - 1, len(self.contents) - 1)]
         return ChatResponse(
             model=request.model,
-            message=ChatMessage(role="assistant", content=self.content),
+            message=ChatMessage(role="assistant", content=content),
             done=True,
         )
 
@@ -176,12 +180,12 @@ def test_valid_single_tool_call_executes_once_and_records_observation() -> None:
 
     run = run_with_tool_executor(provider, registry, executor)
 
-    assert provider.chat_calls == 1
-    assert run.status is AgentRunStatus.STOPPED
-    assert run.stop_reason == TOOL_EXECUTION_COMPLETED_STOP_REASON
-    assert run.final_answer is None
-    assert len(run.steps) == 2
-    model_step, tool_step = run.steps
+    assert provider.chat_calls == 2
+    assert run.status is AgentRunStatus.SUCCEEDED
+    assert run.stop_reason is None
+    assert run.final_answer == "final answer"
+    assert len(run.steps) == 3
+    model_step, tool_step, final_step = run.steps
     assert model_step.step_type is AgentStepType.MODEL
     assert model_step.status is AgentStepStatus.SUCCEEDED
     assert model_step.tool_calls == [
@@ -205,6 +209,8 @@ def test_valid_single_tool_call_executes_once_and_records_observation() -> None:
         "request_id": "req-123",
         "success": True,
     }
+    assert final_step.step_type is AgentStepType.FINAL
+    assert final_step.status is AgentStepStatus.SUCCEEDED
     assert executor.calls == model_step.tool_calls
     assert len(echo_tool.executions) == 1
     assert echo_tool.executions[0][1].request_id == "req-123"
@@ -228,20 +234,21 @@ def test_multiple_tool_calls_execute_and_record_steps_in_order() -> None:
 
     run = run_with_tool_executor(provider, registry, executor)
 
-    assert provider.chat_calls == 1
+    assert provider.chat_calls == 2
     assert [call.arguments["value"] for call in executor.calls] == [
         "first",
         "second",
     ]
-    assert [step.index for step in run.steps] == [0, 1, 2]
+    assert [step.index for step in run.steps] == [0, 1, 2, 3]
     assert [step.step_type for step in run.steps] == [
         AgentStepType.MODEL,
         AgentStepType.TOOL,
         AgentStepType.TOOL,
+        AgentStepType.FINAL,
     ]
     assert [
         step.tool_result.result["sequence"]
-        for step in run.steps[1:]
+        for step in run.steps[1:-1]
         if step.tool_result is not None and step.tool_result.result is not None
     ] == [1, 2]
 
@@ -261,9 +268,9 @@ def test_failed_tool_result_is_recorded_without_aborting_run() -> None:
 
     run = run_with_tool_executor(provider, registry, executor)
 
-    assert run.status is AgentRunStatus.STOPPED
-    assert run.stop_reason == TOOL_EXECUTION_COMPLETED_STOP_REASON
-    assert len(run.steps) == 2
+    assert run.status is AgentRunStatus.SUCCEEDED
+    assert run.stop_reason is None
+    assert len(run.steps) == 3
     failed_step = run.steps[1]
     assert failed_step.step_type is AgentStepType.TOOL
     assert failed_step.status is AgentStepStatus.FAILED
@@ -292,11 +299,14 @@ def test_invalid_json_executes_no_tools() -> None:
         retry_policy=ToolCallRetryPolicy(max_attempts=2),
     )
 
-    assert provider.chat_calls == 1
-    assert run.status is AgentRunStatus.FAILED
-    assert run.repair_decision is not None
-    assert run.repair_decision.action is ToolCallRepairAction.RETRY
-    assert run.repair_decision.failure.code is ToolCallFailureCode.INVALID_JSON
+    assert provider.chat_calls == 2
+    assert run.status is AgentRunStatus.SUCCEEDED
+    assert run.repair_decision is None
+    assert run.steps[0].repair_decision is not None
+    assert run.steps[0].repair_decision.action is ToolCallRepairAction.RETRY
+    assert run.steps[0].repair_decision.failure.code is (
+        ToolCallFailureCode.INVALID_JSON
+    )
     assert executor.calls == []
     assert echo_tool.executions == []
     rendered = run.model_dump_json()
@@ -319,11 +329,12 @@ def test_unknown_tool_executes_no_tools() -> None:
 
     run = run_with_tool_executor(provider, registry, executor)
 
-    assert provider.chat_calls == 1
-    assert run.status is AgentRunStatus.FAILED
-    assert run.repair_decision is not None
-    assert run.repair_decision.action is ToolCallRepairAction.SAFE_FAILURE
-    assert run.repair_decision.failure.code is ToolCallFailureCode.UNKNOWN_TOOL
+    assert provider.chat_calls == 2
+    assert run.status is AgentRunStatus.SUCCEEDED
+    assert run.repair_decision is None
+    assert run.steps[0].repair_decision is not None
+    assert run.steps[0].repair_decision.action is ToolCallRepairAction.SAFE_FAILURE
+    assert run.steps[0].repair_decision.failure.code is ToolCallFailureCode.UNKNOWN_TOOL
     assert executor.calls == []
     assert echo_tool.executions == []
 
@@ -335,10 +346,10 @@ def test_empty_tool_calls_executes_no_tools() -> None:
 
     run = run_with_tool_executor(provider, registry, executor)
 
-    assert provider.chat_calls == 1
-    assert run.status is AgentRunStatus.STOPPED
-    assert run.stop_reason == NO_TOOL_CALLS_GENERATED_STOP_REASON
-    assert len(run.steps) == 1
+    assert provider.chat_calls == 2
+    assert run.status is AgentRunStatus.SUCCEEDED
+    assert run.stop_reason is None
+    assert len(run.steps) == 2
     assert run.steps[0].tool_calls == []
     assert executor.calls == []
     assert echo_tool.executions == []
@@ -402,9 +413,10 @@ def test_tool_observation_run_is_json_serializable() -> None:
     data = run.model_dump(mode="json")
 
     assert json.loads(run.model_dump_json()) == data
-    assert data["final_answer"] is None
+    assert data["final_answer"] == "final answer"
     assert data["steps"][1]["observation"] == {
         "source": "tool_executor",
         "request_id": "req-123",
         "success": True,
     }
+    assert data["steps"][2]["step_type"] == "final"

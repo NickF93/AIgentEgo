@@ -15,8 +15,11 @@ from aigentego.agents.contracts import (
 from aigentego.llm import (
     ChatMessage,
     ChatRequest,
+    ChatResponse,
     LlmProvider,
+    LlmProviderError,
     ToolCallParseError,
+    ToolCallRepairDecision,
     ToolCallRetryPolicy,
     ToolCallValidationError,
     parse_structured_tool_calls,
@@ -40,6 +43,8 @@ TOOL_EXECUTION_COMPLETED_STOP_REASON = (
 TOOL_CALL_GENERATION_CONFIG_ERROR = (
     "structured tool-call generation requires provider, model, and registry"
 )
+FINAL_ANSWER_SYNTHESIS_SUMMARY = "final answer synthesized"
+FINAL_ANSWER_SYNTHESIS_FAILED_ERROR_DETAIL = "final answer synthesis failed"
 
 
 class AgentLoopLimits(BaseModel):
@@ -151,20 +156,30 @@ class AgentLoopExecutor:
             )
         except (ToolCallParseError, ToolCallValidationError) as error:
             repair_decision = config.retry_policy.decide(error, attempt=1)
+            steps = [
+                AgentStep(
+                    index=0,
+                    step_type=AgentStepType.MODEL,
+                    status=AgentStepStatus.FAILED,
+                    model_summary="structured tool-call output was invalid",
+                    repair_decision=repair_decision,
+                ),
+            ]
+            if config.tool_executor is not None:
+                return await self._synthesize_final_answer(
+                    config,
+                    user_message=user_message,
+                    run_id=run_id,
+                    request_id=request_id,
+                    steps=steps,
+                    repair_decision=repair_decision,
+                )
             return AgentRun(
                 run_id=run_id,
                 request_id=request_id,
                 user_message=user_message,
                 status=AgentRunStatus.FAILED,
-                steps=[
-                    AgentStep(
-                        index=0,
-                        step_type=AgentStepType.MODEL,
-                        status=AgentStepStatus.FAILED,
-                        model_summary="structured tool-call output was invalid",
-                        repair_decision=repair_decision,
-                    ),
-                ],
+                steps=steps,
                 repair_decision=repair_decision,
             )
 
@@ -192,13 +207,13 @@ class AgentLoopExecutor:
                         request_id=request_id,
                     ),
                 )
-            return AgentRun(
+        if config.tool_executor is not None:
+            return await self._synthesize_final_answer(
+                config,
+                user_message=user_message,
                 run_id=run_id,
                 request_id=request_id,
-                user_message=user_message,
-                status=AgentRunStatus.STOPPED,
                 steps=steps,
-                stop_reason=TOOL_EXECUTION_COMPLETED_STOP_REASON,
             )
 
         return AgentRun(
@@ -273,6 +288,63 @@ class AgentLoopExecutor:
             return MAX_STEPS_REACHED_STOP_REASON
         return AGENT_LOOP_SKELETON_STOP_REASON
 
+    async def _synthesize_final_answer(
+        self,
+        config: _ToolCallGenerationConfig,
+        *,
+        user_message: str,
+        run_id: str,
+        request_id: str | None,
+        steps: list[AgentStep],
+        repair_decision: ToolCallRepairDecision | None = None,
+    ) -> AgentRun:
+        try:
+            response = await config.provider.chat(
+                _build_final_answer_synthesis_request(
+                    model=config.model,
+                    user_message=user_message,
+                    request_id=request_id,
+                    steps=steps,
+                ),
+            )
+        except LlmProviderError as error:
+            error_detail = f"{FINAL_ANSWER_SYNTHESIS_FAILED_ERROR_DETAIL}: {error}"
+            return AgentRun(
+                run_id=run_id,
+                request_id=request_id,
+                user_message=user_message,
+                status=AgentRunStatus.FAILED,
+                steps=[
+                    *steps,
+                    AgentStep(
+                        index=len(steps),
+                        step_type=AgentStepType.FINAL,
+                        status=AgentStepStatus.FAILED,
+                        model_summary=FINAL_ANSWER_SYNTHESIS_FAILED_ERROR_DETAIL,
+                        error_detail=error_detail,
+                    ),
+                ],
+                repair_decision=repair_decision,
+                error_detail=error_detail,
+            )
+
+        return AgentRun(
+            run_id=run_id,
+            request_id=request_id,
+            user_message=user_message,
+            status=AgentRunStatus.SUCCEEDED,
+            steps=[
+                *steps,
+                _final_answer_step(
+                    index=len(steps),
+                    response=response,
+                    request_id=request_id,
+                    provider_name=config.provider.provider_name,
+                ),
+            ],
+            final_answer=response.message.content,
+        )
+
 
 async def run_agent_loop(
     user_message: str,
@@ -344,6 +416,69 @@ def _build_tool_call_generation_request(
     )
 
 
+def _build_final_answer_synthesis_request(
+    *,
+    model: str,
+    user_message: str,
+    request_id: str | None,
+    steps: list[AgentStep],
+) -> ChatRequest:
+    return ChatRequest(
+        model=model,
+        messages=[
+            ChatMessage(
+                role="system",
+                content=(
+                    "Synthesize a final natural-language answer for the user "
+                    "from the provider-neutral JSON context. Use deterministic "
+                    "tool results when present. If structured tool-call "
+                    "generation failed, use only the safe repair decision "
+                    "details. Do not request or execute tools."
+                ),
+            ),
+            ChatMessage(
+                role="user",
+                content=json.dumps(
+                    _build_final_answer_context(
+                        user_message=user_message,
+                        request_id=request_id,
+                        steps=steps,
+                    ),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            ),
+        ],
+    )
+
+
+def _build_final_answer_context(
+    *,
+    user_message: str,
+    request_id: str | None,
+    steps: list[AgentStep],
+) -> dict[str, object]:
+    tool_calls = _collect_tool_calls(steps)
+    tool_results = _collect_tool_results(steps)
+    repair_decision = _first_repair_decision(steps)
+    return {
+        "user_message": user_message,
+        "request_id": request_id,
+        "steps": [step.model_dump(mode="json") for step in steps],
+        "tool_calls": [
+            tool_call.model_dump(mode="json") for tool_call in tool_calls
+        ],
+        "tool_results": [
+            tool_result.model_dump(mode="json") for tool_result in tool_results
+        ],
+        "repair_decision": (
+            repair_decision.model_dump(mode="json")
+            if repair_decision is not None
+            else None
+        ),
+    }
+
+
 def _tool_execution_step(
     *,
     index: int,
@@ -376,6 +511,51 @@ def _tool_execution_step(
     )
 
 
+def _final_answer_step(
+    *,
+    index: int,
+    response: ChatResponse,
+    request_id: str | None,
+    provider_name: str,
+) -> AgentStep:
+    return AgentStep(
+        index=index,
+        step_type=AgentStepType.FINAL,
+        status=AgentStepStatus.SUCCEEDED,
+        model_summary=FINAL_ANSWER_SYNTHESIS_SUMMARY,
+        observation={
+            "source": "llm_provider",
+            "provider": provider_name,
+            "model": response.model,
+            "request_id": request_id,
+        },
+    )
+
+
+def _collect_tool_calls(steps: list[AgentStep]) -> list[ToolCall]:
+    tool_calls: list[ToolCall] = []
+    for step in steps:
+        tool_calls.extend(step.tool_calls)
+    return tool_calls
+
+
+def _collect_tool_results(steps: list[AgentStep]) -> list[ToolResult]:
+    tool_results: list[ToolResult] = []
+    for step in steps:
+        if step.tool_result is not None:
+            tool_results.append(step.tool_result)
+    return tool_results
+
+
+def _first_repair_decision(
+    steps: list[AgentStep],
+) -> ToolCallRepairDecision | None:
+    for step in steps:
+        if step.repair_decision is not None:
+            return step.repair_decision
+    return None
+
+
 def _tool_call_generation_summary(tool_call_count: int) -> str:
     if tool_call_count == 0:
         return "model produced no structured tool calls"
@@ -397,6 +577,8 @@ __all__ = [
     "TOOL_CALLS_GENERATED_STOP_REASON",
     "TOOL_EXECUTION_COMPLETED_STOP_REASON",
     "TOOL_CALL_GENERATION_CONFIG_ERROR",
+    "FINAL_ANSWER_SYNTHESIS_FAILED_ERROR_DETAIL",
+    "FINAL_ANSWER_SYNTHESIS_SUMMARY",
     "AgentLoopExecutor",
     "AgentLoopLimits",
     "run_agent_loop",
