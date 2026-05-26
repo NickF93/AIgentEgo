@@ -14,13 +14,14 @@ request, expose deterministic tools, execute an explicitly requested calculator
 tool, and be validated repeatably. MVP 0.3 adds provider-neutral structured
 ToolCall handling on top of that deterministic tool substrate. MVP 0.3.7 adds
 optional llama.cpp backend compatibility for that provider-neutral boundary. It
-is not yet a complete agent runtime.
+MVP 0.4 adds bounded Agent Loop v1 through an inspectable `/agent/run` API. It
+is still not an unbounded autonomous agent runtime.
 
-## MVP 0.3.7 Status
+## MVP 0.4 Status
 
-Latest completed milestone: MVP 0.3.7 llama.cpp backend compatibility.
+Latest completed milestone: MVP 0.4 Agent Loop v1.
 
-Included through MVP 0.3 and the completed MVP 0.3.7 bridge work:
+Included through MVP 0.4:
 
 - Python package skeleton
 - Environment-based runtime settings
@@ -42,13 +43,20 @@ Included through MVP 0.3 and the completed MVP 0.3.7 bridge work:
 - Bounded repair decisions and safe-failure representation for invalid output
 - Single-step structured ToolCall flow through `LlmProvider`
 - Final answer synthesis from deterministic tool results or safe-failure context
+- Provider-neutral AgentRun and AgentStep contracts
+- Bounded Agent Loop v1 executor
+- Structured ToolCall generation inside the bounded agent loop
+- Ordered ToolExecutor observations in inspectable agent steps
+- Final answer synthesis for bounded agent runs
+- Explicit max steps, max tool errors, and timeout safety limits
+- Minimal `POST /agent/run` API
 - Request ids, basic request logging, and tool execution logging
 - Docker and Compose smoke tests
 - Makefile development shortcuts
 
 The public tool API still invokes tools manually through explicit REST calls.
-MVP 0.3 adds provider-neutral library/runtime support for single-step
-LLM-requested ToolCalls, not a public agent endpoint or a multi-step loop.
+The agent API invokes tools only after structured model output has been parsed
+and validated into deterministic `ToolCall` objects.
 
 In the 0.3 flow:
 
@@ -67,6 +75,21 @@ MVP 0.3.7 keeps Ollama as the default backend and adds `llamacpp` as an
 optional backend identifier. Application code still depends on `LlmProvider`;
 backend selection remains centralized in the provider factory, and
 llama.cpp-specific HTTP payloads stay inside `LlamaCppProvider`.
+
+In the 0.4 Agent Loop v1 flow:
+
+1. A client sends one `POST /agent/run` request.
+2. The configured `LlmProvider` generates strict structured ToolCall output.
+3. Model-produced tool calls are parsed and validated before execution.
+4. Valid calls execute through deterministic `ToolExecutor`.
+5. Ordered `AgentStep` records capture model, tool, and final-answer activity.
+6. The configured `LlmProvider` synthesizes a final answer.
+7. The API returns an inspectable `AgentRun`.
+
+The v1 loop is bounded by max steps, max tool errors, and timeout limits. Safety
+limit exits are explicit in returned `AgentRun` data. This is not an unbounded
+autonomous loop, and it does not add persistent memory, RAG, filesystem access,
+calendar integration, sandboxing, CLI, streaming, or MCP support.
 
 ## Roadmap
 
@@ -207,7 +230,7 @@ Example shape:
 ```json
 {
   "status": "ok",
-  "package_version": "0.3.7",
+  "package_version": "0.4.0",
   "llm_backend": "ollama",
   "llm_provider": "ollama",
   "provider_base_url": "http://ollama:11434",
@@ -304,6 +327,63 @@ Example shape:
 }
 ```
 
+### `POST /agent/run`
+
+Runs one bounded Agent Loop v1 pass and returns inspectable run state. The
+endpoint uses the configured provider through `LlmProvider`, validates
+structured model-produced ToolCalls before execution, executes valid calls only
+through deterministic `ToolExecutor`, and synthesizes one final answer.
+
+```sh
+curl -X POST http://localhost:8080/agent/run \
+  -H 'Content-Type: application/json' \
+  -H 'X-Request-ID: local-agent-1' \
+  -d '{"message":"What is 8 * 9?","max_steps":8,"max_tool_errors":3,"timeout_seconds":30}'
+```
+
+Only `message` is required. `max_steps`, `max_tool_errors`, and
+`timeout_seconds` are optional bounded-loop overrides.
+
+Example shape:
+
+```json
+{
+  "run_id": "local-agent-1",
+  "request_id": "local-agent-1",
+  "user_message": "What is 8 * 9?",
+  "status": "succeeded",
+  "steps": [
+    {
+      "index": 0,
+      "step_type": "model",
+      "status": "succeeded",
+      "model_summary": "generated 1 tool call",
+      "tool_calls": [
+        {
+          "tool_name": "calculator",
+          "arguments": {
+            "expression": "8 * 9"
+          }
+        }
+      ],
+      "tool_call": null,
+      "tool_result": null,
+      "observation": null,
+      "repair_decision": null,
+      "error_detail": null
+    }
+  ],
+  "final_answer": "The answer is 72.",
+  "stop_reason": null,
+  "repair_decision": null,
+  "error_detail": null
+}
+```
+
+Invalid request payloads return HTTP 422. Provider, structured-output, tool, or
+safety-limit failures are represented as inspectable `failed` or `stopped`
+`AgentRun` values unless FastAPI rejects the request before the run starts.
+
 ## Validation
 
 Run the core local validation suite:
@@ -334,6 +414,11 @@ The Compose smoke test starts an isolated stack, waits for Ollama, pulls the
 configured models, starts the API, checks `/health` and `/diagnostics`, sends a
 real `/chat` request, verifies `GET /tools`, manually executes the calculator
 through `POST /tools/execute`, and then cleans up its containers.
+
+The default Compose smoke test does not call `/agent/run`. Live agent runs
+depend on model compliance with strict structured ToolCall JSON and are better
+validated through deterministic mocked tests by default. Manual local
+`/agent/run` validation is still possible after starting the stack.
 
 ### Optional llama.cpp Manual Validation
 
@@ -377,9 +462,10 @@ structured JSON, and valid calls still execute only through `ToolExecutor`.
 
 - `/chat` supports one public user message per request and non-streaming
   responses only.
-- Public deterministic tool endpoints are manual/API-driven only.
-- Structured ToolCall support is provider-neutral and single-step; no public
-  `/agent/run` endpoint or multi-step agent loop exists yet.
+- `/agent/run` is bounded Agent Loop v1 with one structured ToolCall generation
+  phase, deterministic tool execution observations, and one final synthesis
+  phase. It is not an unbounded autonomous replanning loop.
+- Public deterministic tool endpoints remain manual/API-driven.
 - There is no persistent memory store, notes search, read-only filesystem tool,
   calendar adapter, database integration, sandbox, CLI, MCP, or streaming
   support.
@@ -393,6 +479,5 @@ structured JSON, and valid calls still execute only through `ToolExecutor`.
 
 ## Next Direction
 
-The completed bridge milestone is llama.cpp backend compatibility. The next
-planned runtime milestone is Agent Loop v1: a bounded multi-step loop with
-explicit limits and observations.
+The completed runtime milestone is bounded Agent Loop v1. The next planned
+runtime milestone is persistent conversations and memory.
