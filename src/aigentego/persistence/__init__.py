@@ -1,5 +1,11 @@
 """Local persistence substrate primitives."""
 
+from aigentego.persistence.models import (
+    Conversation,
+    ConversationStatus,
+    Session,
+    SessionStatus,
+)
 from aigentego.persistence.sqlite import (
     SCHEMA_VERSION,
     connect_sqlite,
@@ -10,6 +16,10 @@ from aigentego.persistence.sqlite import (
 
 __all__ = [
     "SCHEMA_VERSION",
+    "Conversation",
+    "ConversationStatus",
+    "Session",
+    "SessionStatus",
     "connect_sqlite",
     "initialize_sqlite_schema",
     "open_sqlite_database",
