@@ -36,6 +36,9 @@ htmlcov/
 .env.*
 !.env.example
 
+# Local AIgentEgo runtime data
+.aigentego/
+
 # Docker and Compose local overrides
 docker-compose.override.yml
 compose.override.yml

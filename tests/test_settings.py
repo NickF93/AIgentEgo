@@ -12,6 +12,8 @@ SETTINGS_ENV_VARS = (
     "OLLAMA_BASE_URL",
     "OLLAMA_CHAT_MODEL",
     "OLLAMA_EMBED_MODEL",
+    "SQLITE_PATH",
+    "AIGENTEGO_SQLITE_PATH",
     "REQUEST_TIMEOUT_SECONDS",
     "LOG_LEVEL",
 )
@@ -31,6 +33,7 @@ def test_default_settings_can_be_instantiated(monkeypatch) -> None:
     assert settings.agent_port == 8080
     assert settings.llm_backend == "ollama"
     assert settings.llm_base_url == "http://ollama:11434"
+    assert settings.sqlite_path == ".aigentego/aigentego.sqlite3"
     assert settings.request_timeout_seconds == 120
     assert settings.log_level == "INFO"
 
@@ -62,6 +65,7 @@ def test_canonical_environment_variables_override_defaults(monkeypatch) -> None:
     monkeypatch.setenv("LLM_BASE_URL", "http://localhost:11434")
     monkeypatch.setenv("CHAT_MODEL", "qwen2.5:7b")
     monkeypatch.setenv("EMBEDDING_MODEL", "mxbai-embed-large")
+    monkeypatch.setenv("SQLITE_PATH", "/tmp/aigentego-test.sqlite3")
     monkeypatch.setenv("REQUEST_TIMEOUT_SECONDS", "30")
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
 
@@ -73,6 +77,7 @@ def test_canonical_environment_variables_override_defaults(monkeypatch) -> None:
     assert settings.llm_base_url == "http://localhost:11434"
     assert settings.chat_model == "qwen2.5:7b"
     assert settings.embedding_model == "mxbai-embed-large"
+    assert settings.sqlite_path == "/tmp/aigentego-test.sqlite3"
     assert settings.ollama_base_url == "http://localhost:11434"
     assert settings.ollama_chat_model == "qwen2.5:7b"
     assert settings.ollama_embed_model == "mxbai-embed-large"
@@ -156,6 +161,25 @@ def test_env_file_is_loaded_when_present(tmp_path: Path, monkeypatch) -> None:
     assert settings.agent_port == 7070
     assert settings.llm_base_url == "http://env-file:11434"
     assert settings.request_timeout_seconds == 45
+
+
+def test_sqlite_path_environment_aliases(monkeypatch) -> None:
+    clear_settings_env(monkeypatch)
+    monkeypatch.setenv("AIGENTEGO_SQLITE_PATH", "/tmp/aigentego-alias.sqlite3")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.sqlite_path == "/tmp/aigentego-alias.sqlite3"
+
+
+def test_canonical_sqlite_path_environment_overrides_alias(monkeypatch) -> None:
+    clear_settings_env(monkeypatch)
+    monkeypatch.setenv("SQLITE_PATH", "/tmp/aigentego-canonical.sqlite3")
+    monkeypatch.setenv("AIGENTEGO_SQLITE_PATH", "/tmp/aigentego-alias.sqlite3")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.sqlite_path == "/tmp/aigentego-canonical.sqlite3"
 
 
 def test_integer_fields_are_parsed_from_environment(monkeypatch) -> None:
