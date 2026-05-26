@@ -40,6 +40,34 @@ def test_schema_initialization_is_idempotent(tmp_path) -> None:
     ]
 
 
+def test_schema_initialization_creates_persistence_tables(tmp_path) -> None:
+    connection = open_sqlite_database(tmp_path / "aigentego.sqlite3")
+    try:
+        rows = connection.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+                AND name IN (
+                    'schema_metadata',
+                    'sessions',
+                    'conversations',
+                    'messages'
+                )
+            ORDER BY name
+            """,
+        ).fetchall()
+    finally:
+        connection.close()
+
+    assert [row["name"] for row in rows] == [
+        "conversations",
+        "messages",
+        "schema_metadata",
+        "sessions",
+    ]
+
+
 def test_connect_sqlite_enables_foreign_keys_and_row_factory(tmp_path) -> None:
     sqlite_path = tmp_path / "aigentego.sqlite3"
 

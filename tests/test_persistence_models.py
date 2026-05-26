@@ -4,10 +4,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-import aigentego.persistence as persistence
 from aigentego.persistence import (
     Conversation,
     ConversationStatus,
+    Message,
+    MessageRole,
     Session,
     SessionStatus,
 )
@@ -50,6 +51,26 @@ def test_valid_conversation_model_can_be_created() -> None:
     assert conversation.title == "Default conversation"
     assert conversation.status is ConversationStatus.ACTIVE
     assert conversation.is_default is True
+
+
+def test_valid_message_model_can_be_created() -> None:
+    created_at = timestamp()
+
+    message = Message(
+        message_id="message-123",
+        session_id="session-123",
+        conversation_id="conversation-123",
+        role=MessageRole.USER,
+        content="Hello.",
+        created_at=created_at,
+    )
+
+    assert message.message_id == "message-123"
+    assert message.session_id == "session-123"
+    assert message.conversation_id == "conversation-123"
+    assert message.role is MessageRole.USER
+    assert message.content == "Hello."
+    assert message.created_at == created_at
 
 
 def test_conversation_represents_session_relationship_and_default_flag() -> None:
@@ -100,6 +121,60 @@ def test_conversation_rejects_blank_ids_and_optional_text(
         Conversation.model_validate(payload)
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "message_id": "",
+            "session_id": "session-123",
+            "conversation_id": "conversation-123",
+            "role": "user",
+            "content": "Hello.",
+        },
+        {
+            "message_id": "message-123",
+            "session_id": "",
+            "conversation_id": "conversation-123",
+            "role": "user",
+            "content": "Hello.",
+        },
+        {
+            "message_id": "message-123",
+            "session_id": "session-123",
+            "conversation_id": "",
+            "role": "user",
+            "content": "Hello.",
+        },
+        {
+            "message_id": "message-123",
+            "session_id": "session-123",
+            "conversation_id": "conversation-123",
+            "role": "user",
+            "content": "",
+        },
+        {
+            "message_id": "   ",
+            "session_id": "session-123",
+            "conversation_id": "conversation-123",
+            "role": "user",
+            "content": "Hello.",
+        },
+        {
+            "message_id": "message-123",
+            "session_id": "session-123",
+            "conversation_id": "conversation-123",
+            "role": "user",
+            "content": "   ",
+        },
+    ],
+)
+def test_message_rejects_blank_ids_and_content(
+    payload: dict[str, str],
+) -> None:
+    with pytest.raises(ValidationError):
+        Message.model_validate(payload)
+
+
 def test_extra_fields_are_rejected() -> None:
     with pytest.raises(ValidationError):
         Session.model_validate(
@@ -118,6 +193,18 @@ def test_extra_fields_are_rejected() -> None:
             },
         )
 
+    with pytest.raises(ValidationError):
+        Message.model_validate(
+            {
+                "message_id": "message-123",
+                "session_id": "session-123",
+                "conversation_id": "conversation-123",
+                "role": "user",
+                "content": "Hello.",
+                "unexpected": "field",
+            },
+        )
+
 
 def test_timestamps_must_be_timezone_aware() -> None:
     naive_timestamp = datetime(2026, 5, 26, 12, 30)
@@ -130,6 +217,16 @@ def test_timestamps_must_be_timezone_aware() -> None:
             conversation_id="conversation-123",
             session_id="session-123",
             updated_at=naive_timestamp,
+        )
+
+    with pytest.raises(ValidationError, match="timestamps must be timezone-aware"):
+        Message(
+            message_id="message-123",
+            session_id="session-123",
+            conversation_id="conversation-123",
+            role=MessageRole.USER,
+            content="Hello.",
+            created_at=naive_timestamp,
         )
 
 
@@ -173,10 +270,19 @@ def test_models_serialize_to_json_compatible_data() -> None:
         created_at=created_at,
         updated_at=updated_at,
     )
+    message = Message(
+        message_id="message-123",
+        session_id=session.session_id,
+        conversation_id=conversation.conversation_id,
+        role=MessageRole.ASSISTANT,
+        content="The answer is 42.",
+        created_at=created_at,
+    )
 
     data = {
         "session": session.model_dump(mode="json"),
         "conversation": conversation.model_dump(mode="json"),
+        "message": message.model_dump(mode="json"),
     }
 
     assert json.loads(
@@ -199,9 +305,21 @@ def test_models_serialize_to_json_compatible_data() -> None:
             "created_at": "2026-05-26T12:30:00Z",
             "updated_at": "2026-05-26T12:35:00Z",
         },
+        "message": {
+            "message_id": "message-123",
+            "session_id": "session-123",
+            "conversation_id": "conversation-123",
+            "role": "assistant",
+            "content": "The answer is 42.",
+            "created_at": "2026-05-26T12:30:00Z",
+        },
     }
 
 
-def test_message_model_and_store_are_not_exported_yet() -> None:
-    assert not hasattr(persistence, "Message")
-    assert not hasattr(persistence, "MessageStore")
+def test_message_roles_are_explicit() -> None:
+    assert [role.value for role in MessageRole] == [
+        "system",
+        "user",
+        "assistant",
+        "tool",
+    ]

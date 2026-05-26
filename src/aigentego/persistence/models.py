@@ -21,6 +21,15 @@ class ConversationStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+class MessageRole(StrEnum):
+    """Inspectable roles for persisted conversation messages."""
+
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
+
+
 class Session(BaseModel):
     """Provider-neutral metadata for a local user session."""
 
@@ -83,6 +92,31 @@ class Conversation(BaseModel):
         return self
 
 
+class Message(BaseModel):
+    """Provider-neutral persisted conversation message."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    message_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    conversation_id: str = Field(min_length=1)
+    role: MessageRole
+    content: str = Field(min_length=1)
+    created_at: datetime | None = None
+
+    @field_validator("message_id", "session_id", "conversation_id", "content")
+    @classmethod
+    def validate_text(cls, value: str | None) -> str | None:
+        """Reject blank identifiers and message content."""
+        return _validate_optional_text(value)
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_timestamp(cls, value: datetime | None) -> datetime | None:
+        """Require caller-supplied timestamps to be timezone-aware."""
+        return _validate_optional_timezone_aware_datetime(value)
+
+
 def _validate_optional_text(value: str | None) -> str | None:
     if value is not None and not value.strip():
         raise ValueError("text fields must not be blank")
@@ -108,6 +142,8 @@ def _validate_timestamp_order(
 __all__ = [
     "Conversation",
     "ConversationStatus",
+    "Message",
+    "MessageRole",
     "Session",
     "SessionStatus",
 ]

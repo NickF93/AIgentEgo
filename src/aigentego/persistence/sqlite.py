@@ -15,6 +15,57 @@ CREATE TABLE IF NOT EXISTS schema_metadata (
 )
 """
 
+_SESSIONS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id TEXT PRIMARY KEY,
+    title TEXT,
+    status TEXT NOT NULL CHECK (status IN ('active', 'archived')),
+    created_at TEXT,
+    updated_at TEXT
+)
+"""
+
+_CONVERSATIONS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS conversations (
+    conversation_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    title TEXT,
+    status TEXT NOT NULL CHECK (status IN ('active', 'archived')),
+    is_default INTEGER NOT NULL CHECK (is_default IN (0, 1)),
+    created_at TEXT,
+    updated_at TEXT,
+    UNIQUE (session_id, conversation_id),
+    FOREIGN KEY (session_id) REFERENCES sessions (session_id) ON DELETE CASCADE
+)
+"""
+
+_MESSAGES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS messages (
+    message_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    sequence_index INTEGER NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('system', 'user', 'assistant', 'tool')),
+    content TEXT NOT NULL,
+    created_at TEXT,
+    UNIQUE (conversation_id, sequence_index),
+    FOREIGN KEY (session_id) REFERENCES sessions (session_id) ON DELETE CASCADE,
+    FOREIGN KEY (session_id, conversation_id)
+        REFERENCES conversations (session_id, conversation_id)
+        ON DELETE CASCADE
+)
+"""
+
+_CONVERSATIONS_SESSION_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_conversations_session_id
+ON conversations (session_id)
+"""
+
+_MESSAGES_CONVERSATION_SEQUENCE_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_sequence
+ON messages (conversation_id, sequence_index)
+"""
+
 
 def _normalize_sqlite_path(sqlite_path: str | Path) -> str:
     value = str(sqlite_path).strip()
@@ -50,8 +101,13 @@ def connect_sqlite(sqlite_path: str | Path) -> sqlite3.Connection:
 
 
 def initialize_sqlite_schema(connection: sqlite3.Connection) -> None:
-    """Initialize the metadata-only persistence schema idempotently."""
+    """Initialize the local persistence schema idempotently."""
     connection.execute(_METADATA_TABLE_SQL)
+    connection.execute(_SESSIONS_TABLE_SQL)
+    connection.execute(_CONVERSATIONS_TABLE_SQL)
+    connection.execute(_MESSAGES_TABLE_SQL)
+    connection.execute(_CONVERSATIONS_SESSION_INDEX_SQL)
+    connection.execute(_MESSAGES_CONVERSATION_SEQUENCE_INDEX_SQL)
     connection.execute(
         """
         INSERT INTO schema_metadata (key, value)
