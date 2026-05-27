@@ -21,6 +21,7 @@ from aigentego.main import create_app
 from aigentego.observability import REQUEST_ID_HEADER
 from aigentego.persistence import (
     Conversation,
+    MemorySummary,
     Message,
     MessageRole,
     MessageStore,
@@ -159,6 +160,51 @@ def test_persistent_chat_injects_prior_conversation_messages(
     ]
 
 
+def test_persistent_chat_injects_latest_memory_summary(
+    sqlite_path: Path,
+) -> None:
+    provider = SequencedProvider(["Memory-aware answer."])
+    client = make_client(sqlite_path, provider)
+    seed_conversation_messages(
+        sqlite_path,
+        [
+            MessageRole.USER,
+            MessageRole.ASSISTANT,
+        ],
+        [
+            "Earlier question.",
+            "Earlier answer.",
+        ],
+    )
+    seed_memory_summaries(sqlite_path)
+
+    response = client.post(
+        "/conversations/conversation-123/chat",
+        json={"message": "Use the summary."},
+    )
+
+    assert response.status_code == 200
+    assert provider.chat_requests[0].messages == [
+        ChatMessage(
+            role="system",
+            content=(
+                "Conversation memory summary:\n"
+                "Latest summary for this conversation."
+            ),
+        ),
+        ChatMessage(role="user", content="Earlier question."),
+        ChatMessage(role="assistant", content="Earlier answer."),
+        ChatMessage(role="user", content="Use the summary."),
+    ]
+    messages = list_messages(sqlite_path, "conversation-123")
+    assert [message.content for message in messages] == [
+        "Earlier question.",
+        "Earlier answer.",
+        "Use the summary.",
+        "Memory-aware answer.",
+    ]
+
+
 def test_persistent_chat_returns_not_found_for_missing_conversation(
     sqlite_path: Path,
 ) -> None:
@@ -221,12 +267,21 @@ def test_stateless_chat_does_not_write_persistent_messages(
 ) -> None:
     provider = SequencedProvider(["Stateless answer."])
     client = make_client(sqlite_path, provider)
-    create_conversation(client)
+    seed_conversation_messages(
+        sqlite_path,
+        [MessageRole.USER],
+        ["Persisted context that stateless chat must ignore."],
+    )
+    seed_memory_summaries(sqlite_path)
+    before_messages = list_messages(sqlite_path, "conversation-123")
 
     response = client.post("/chat", json={"message": "Hello stateless."})
 
     assert response.status_code == 200
-    assert list_messages(sqlite_path, "conversation-123") == []
+    assert provider.chat_requests[0].messages == [
+        ChatMessage(role="user", content="Hello stateless."),
+    ]
+    assert list_messages(sqlite_path, "conversation-123") == before_messages
 
 
 def test_agent_run_does_not_write_persistent_messages(sqlite_path: Path) -> None:
@@ -237,12 +292,23 @@ def test_agent_run_does_not_write_persistent_messages(sqlite_path: Path) -> None
         ],
     )
     client = make_client(sqlite_path, provider)
-    create_conversation(client)
+    seed_conversation_messages(
+        sqlite_path,
+        [MessageRole.USER],
+        ["Persisted context that agent run must ignore."],
+    )
+    seed_memory_summaries(sqlite_path)
+    before_messages = list_messages(sqlite_path, "conversation-123")
 
     response = client.post("/agent/run", json={"message": "Run without memory."})
 
     assert response.status_code == 200
-    assert list_messages(sqlite_path, "conversation-123") == []
+    rendered_requests = json.dumps(
+        [request.model_dump(mode="json") for request in provider.chat_requests],
+    )
+    assert "Persisted context that agent run must ignore." not in rendered_requests
+    assert "Latest summary for this conversation." not in rendered_requests
+    assert list_messages(sqlite_path, "conversation-123") == before_messages
 
 
 def create_conversation(client: TestClient) -> None:
@@ -279,6 +345,36 @@ def seed_conversation_messages(
                     content=content,
                 ),
             )
+
+
+def seed_memory_summaries(sqlite_path: Path) -> None:
+    with sqlite_connection(sqlite_path) as connection:
+        store = MessageStore(connection)
+        store.upsert_session(Session(session_id="session-123"))
+        store.upsert_conversation(
+            Conversation(
+                conversation_id="conversation-123",
+                session_id="session-123",
+            ),
+        )
+        store.upsert_memory_summary(
+            MemorySummary(
+                summary_id="summary-old",
+                session_id="session-123",
+                conversation_id="conversation-123",
+                content="Old summary for this conversation.",
+                revision=1,
+            ),
+        )
+        store.upsert_memory_summary(
+            MemorySummary(
+                summary_id="summary-latest",
+                session_id="session-123",
+                conversation_id="conversation-123",
+                content="Latest summary for this conversation.",
+                revision=2,
+            ),
+        )
 
 
 def list_messages(sqlite_path: Path, conversation_id: str) -> list[Message]:

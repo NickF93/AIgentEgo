@@ -1,6 +1,6 @@
 """Runtime API routes."""
 
-from typing import Annotated, Literal, cast
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -47,13 +47,12 @@ from aigentego.persistence import (
     MessageRole,
     MessageStore,
     Session,
+    build_conversation_context_messages,
 )
 from aigentego.settings import Settings
 from aigentego.tools import ToolCall, ToolContext, ToolExecutor, ToolRegistry
 
 router = APIRouter()
-
-ChatMessageRole = Literal["system", "user", "assistant"]
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -169,16 +168,14 @@ async def chat_conversation(
         )
 
     prior_messages = store.list_messages(conversation.conversation_id)
+    memory_summary = store.get_latest_memory_summary(conversation.conversation_id)
     provider_request = ChatRequest(
         model=settings.chat_model,
-        messages=[
-            *[
-                chat_message
-                for message in prior_messages
-                if (chat_message := _message_to_chat_message(message)) is not None
-            ],
-            ChatMessage(role="user", content=payload.message),
-        ],
+        messages=build_conversation_context_messages(
+            current_user_message=payload.message,
+            prior_messages=prior_messages,
+            memory_summary=memory_summary,
+        ),
     )
 
     try:
@@ -434,15 +431,6 @@ def _api_error(*, status_code: int, error: str, message: str) -> HTTPException:
     return HTTPException(
         status_code=status_code,
         detail=ApiErrorResponse(error=error, message=message).model_dump(),
-    )
-
-
-def _message_to_chat_message(message: Message) -> ChatMessage | None:
-    if message.role is MessageRole.TOOL:
-        return None
-    return ChatMessage(
-        role=cast(ChatMessageRole, message.role.value),
-        content=message.content,
     )
 
 
