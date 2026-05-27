@@ -56,6 +56,16 @@ class ChatApiResponse(BaseModel):
     message: str
 
 
+class PersistentChatApiResponse(BaseModel):
+    """Public response for an explicitly persisted chat turn."""
+
+    request_id: str
+    session_id: str
+    conversation_id: str
+    model: str
+    message: str
+
+
 class AgentRunApiRequest(BaseModel):
     """Public bounded agent run request."""
 

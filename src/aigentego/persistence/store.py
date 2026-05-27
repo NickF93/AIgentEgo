@@ -169,35 +169,47 @@ class MessageStore:
 
     def append_message(self, message: Message) -> Message:
         """Append a message to a conversation with deterministic ordering."""
+        return self.append_messages([message])[0]
+
+    def append_messages(self, messages: list[Message]) -> list[Message]:
+        """Append messages to a conversation in one transaction."""
+        if not messages:
+            return []
+
         with self._connection:
-            sequence_index = self._next_message_sequence(message.conversation_id)
-            self._connection.execute(
-                """
-                INSERT INTO messages (
-                    message_id,
-                    session_id,
-                    conversation_id,
-                    sequence_index,
-                    role,
-                    content,
-                    created_at
+            for message in messages:
+                sequence_index = self._next_message_sequence(message.conversation_id)
+                self._connection.execute(
+                    """
+                    INSERT INTO messages (
+                        message_id,
+                        session_id,
+                        conversation_id,
+                        sequence_index,
+                        role,
+                        content,
+                        created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        message.message_id,
+                        message.session_id,
+                        message.conversation_id,
+                        sequence_index,
+                        message.role.value,
+                        message.content,
+                        _format_datetime(message.created_at),
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    message.message_id,
-                    message.session_id,
-                    message.conversation_id,
-                    sequence_index,
-                    message.role.value,
-                    message.content,
-                    _format_datetime(message.created_at),
-                ),
-            )
-        stored = self.get_message(message.message_id)
-        if stored is None:
-            raise RuntimeError("failed to append message")
-        return stored
+
+        stored_messages: list[Message] = []
+        for message in messages:
+            stored = self.get_message(message.message_id)
+            if stored is None:
+                raise RuntimeError("failed to append message")
+            stored_messages.append(stored)
+        return stored_messages
 
     def get_message(self, message_id: str) -> Message | None:
         """Return one message by id when present."""

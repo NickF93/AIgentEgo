@@ -1,6 +1,6 @@
 """Runtime API routes."""
 
-from typing import Annotated
+from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -23,6 +23,7 @@ from aigentego.api.schemas import (
     ConversationListApiResponse,
     DiagnosticsResponse,
     HealthResponse,
+    PersistentChatApiResponse,
     SessionApiResponse,
     SessionCreateApiRequest,
     SessionListApiResponse,
@@ -40,11 +41,19 @@ from aigentego.llm import (
     LlmTimeoutError,
 )
 from aigentego.observability import get_request_id
-from aigentego.persistence import Conversation, MessageStore, Session
+from aigentego.persistence import (
+    Conversation,
+    Message,
+    MessageRole,
+    MessageStore,
+    Session,
+)
 from aigentego.settings import Settings
 from aigentego.tools import ToolCall, ToolContext, ToolExecutor, ToolRegistry
 
 router = APIRouter()
+
+ChatMessageRole = Literal["system", "user", "assistant"]
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -127,6 +136,106 @@ async def chat(
 
     return ChatApiResponse(
         request_id=request_id,
+        model=provider_response.model,
+        message=provider_response.message.content,
+    )
+
+
+@router.post(
+    "/conversations/{conversation_id}/chat",
+    response_model=PersistentChatApiResponse,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+        status.HTTP_502_BAD_GATEWAY: {"model": ApiErrorResponse},
+        status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ApiErrorResponse},
+    },
+)
+async def chat_conversation(
+    request: Request,
+    conversation_id: str,
+    payload: ChatApiRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+    provider: Annotated[LlmProvider, Depends(get_llm_provider)],
+    store: Annotated[MessageStore, Depends(get_message_store)],
+) -> PersistentChatApiResponse:
+    """Generate a chat response and persist the explicit conversation turn."""
+    request_id = get_request_id(request)
+    conversation = store.get_conversation(conversation_id)
+    if conversation is None:
+        raise _api_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            error="conversation_not_found",
+            message="conversation not found",
+        )
+
+    prior_messages = store.list_messages(conversation.conversation_id)
+    provider_request = ChatRequest(
+        model=settings.chat_model,
+        messages=[
+            *[
+                chat_message
+                for message in prior_messages
+                if (chat_message := _message_to_chat_message(message)) is not None
+            ],
+            ChatMessage(role="user", content=payload.message),
+        ],
+    )
+
+    try:
+        provider_response = await provider.chat(provider_request)
+    except (LlmConnectionError, LlmTimeoutError) as exc:
+        raise _api_error(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            error="llm_unavailable",
+            message=str(exc),
+        ) from exc
+    except LlmResponseError as exc:
+        raise _api_error(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            error="llm_bad_response",
+            message=str(exc),
+        ) from exc
+    except LlmProviderError as exc:
+        raise _api_error(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            error="llm_error",
+            message=str(exc),
+        ) from exc
+
+    next_message_index = len(prior_messages)
+    store.append_messages(
+        [
+            Message(
+                message_id=_chat_message_id(
+                    conversation_id=conversation.conversation_id,
+                    request_id=request_id,
+                    sequence_index=next_message_index,
+                    role=MessageRole.USER,
+                ),
+                session_id=conversation.session_id,
+                conversation_id=conversation.conversation_id,
+                role=MessageRole.USER,
+                content=payload.message,
+            ),
+            Message(
+                message_id=_chat_message_id(
+                    conversation_id=conversation.conversation_id,
+                    request_id=request_id,
+                    sequence_index=next_message_index + 1,
+                    role=MessageRole.ASSISTANT,
+                ),
+                session_id=conversation.session_id,
+                conversation_id=conversation.conversation_id,
+                role=MessageRole.ASSISTANT,
+                content=provider_response.message.content,
+            ),
+        ],
+    )
+
+    return PersistentChatApiResponse(
+        request_id=request_id,
+        session_id=conversation.session_id,
+        conversation_id=conversation.conversation_id,
         model=provider_response.model,
         message=provider_response.message.content,
     )
@@ -326,3 +435,22 @@ def _api_error(*, status_code: int, error: str, message: str) -> HTTPException:
         status_code=status_code,
         detail=ApiErrorResponse(error=error, message=message).model_dump(),
     )
+
+
+def _message_to_chat_message(message: Message) -> ChatMessage | None:
+    if message.role is MessageRole.TOOL:
+        return None
+    return ChatMessage(
+        role=cast(ChatMessageRole, message.role.value),
+        content=message.content,
+    )
+
+
+def _chat_message_id(
+    *,
+    conversation_id: str,
+    request_id: str,
+    sequence_index: int,
+    role: MessageRole,
+) -> str:
+    return f"{conversation_id}:{request_id}:{sequence_index}:{role.value}"

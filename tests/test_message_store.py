@@ -118,6 +118,36 @@ def test_store_appends_messages_in_deterministic_order(
     assert messages == [first, second]
 
 
+def test_store_appends_multiple_messages_in_one_transaction(
+    sqlite_connection: sqlite3.Connection,
+) -> None:
+    store = MessageStore(sqlite_connection)
+    session, conversation = persist_session_and_conversation(store)
+    user_message = Message(
+        message_id="message-user",
+        session_id=session.session_id,
+        conversation_id=conversation.conversation_id,
+        role=MessageRole.USER,
+        content="Hello.",
+    )
+    assistant_message = Message(
+        message_id="message-assistant",
+        session_id=session.session_id,
+        conversation_id=conversation.conversation_id,
+        role=MessageRole.ASSISTANT,
+        content="Hi.",
+    )
+
+    assert store.append_messages([user_message, assistant_message]) == [
+        user_message,
+        assistant_message,
+    ]
+    assert store.list_messages(conversation.conversation_id) == [
+        user_message,
+        assistant_message,
+    ]
+
+
 def test_store_persists_system_and_tool_message_roles(
     sqlite_connection: sqlite3.Connection,
 ) -> None:
