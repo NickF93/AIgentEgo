@@ -8,6 +8,7 @@ from aigentego import __version__
 from aigentego.agents import AgentLoopExecutor, AgentRun
 from aigentego.api.dependencies import (
     get_llm_provider,
+    get_message_store,
     get_settings,
     get_tool_executor,
     get_tool_registry,
@@ -17,8 +18,14 @@ from aigentego.api.schemas import (
     ApiErrorResponse,
     ChatApiRequest,
     ChatApiResponse,
+    ConversationApiResponse,
+    ConversationCreateApiRequest,
+    ConversationListApiResponse,
     DiagnosticsResponse,
     HealthResponse,
+    SessionApiResponse,
+    SessionCreateApiRequest,
+    SessionListApiResponse,
     ToolExecuteApiRequest,
     ToolExecuteApiResponse,
     ToolListApiResponse,
@@ -33,6 +40,7 @@ from aigentego.llm import (
     LlmTimeoutError,
 )
 from aigentego.observability import get_request_id
+from aigentego.persistence import Conversation, MessageStore, Session
 from aigentego.settings import Settings
 from aigentego.tools import ToolCall, ToolContext, ToolExecutor, ToolRegistry
 
@@ -146,6 +154,133 @@ async def run_agent(
         payload.message,
         run_id=request_id,
         request_id=request_id,
+    )
+
+
+@router.post("/sessions", response_model=SessionApiResponse)
+async def create_session(
+    request: Request,
+    payload: SessionCreateApiRequest,
+    store: Annotated[MessageStore, Depends(get_message_store)],
+) -> SessionApiResponse:
+    """Create or update an explicit local session."""
+    request_id = get_request_id(request)
+    session = store.upsert_session(
+        Session(
+            session_id=payload.session_id,
+            title=payload.title,
+        ),
+    )
+    return SessionApiResponse(request_id=request_id, session=session)
+
+
+@router.get("/sessions/{session_id}", response_model=SessionApiResponse)
+async def get_session(
+    request: Request,
+    session_id: str,
+    store: Annotated[MessageStore, Depends(get_message_store)],
+) -> SessionApiResponse:
+    """Return one persisted local session."""
+    request_id = get_request_id(request)
+    session = store.get_session(session_id)
+    if session is None:
+        raise _api_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            error="session_not_found",
+            message="session not found",
+        )
+    return SessionApiResponse(request_id=request_id, session=session)
+
+
+@router.get("/sessions", response_model=SessionListApiResponse)
+async def list_sessions(
+    request: Request,
+    store: Annotated[MessageStore, Depends(get_message_store)],
+) -> SessionListApiResponse:
+    """List persisted local sessions."""
+    request_id = get_request_id(request)
+    return SessionListApiResponse(
+        request_id=request_id,
+        sessions=store.list_sessions(),
+    )
+
+
+@router.post(
+    "/sessions/{session_id}/conversations",
+    response_model=ConversationApiResponse,
+)
+async def create_conversation(
+    request: Request,
+    session_id: str,
+    payload: ConversationCreateApiRequest,
+    store: Annotated[MessageStore, Depends(get_message_store)],
+) -> ConversationApiResponse:
+    """Create or update an explicit local conversation under a session."""
+    request_id = get_request_id(request)
+    if store.get_session(session_id) is None:
+        raise _api_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            error="session_not_found",
+            message="session not found",
+        )
+    conversation = store.upsert_conversation(
+        Conversation(
+            conversation_id=payload.conversation_id,
+            session_id=session_id,
+            title=payload.title,
+            is_default=payload.is_default,
+        ),
+    )
+    return ConversationApiResponse(
+        request_id=request_id,
+        conversation=conversation,
+    )
+
+
+@router.get(
+    "/sessions/{session_id}/conversations",
+    response_model=ConversationListApiResponse,
+)
+async def list_session_conversations(
+    request: Request,
+    session_id: str,
+    store: Annotated[MessageStore, Depends(get_message_store)],
+) -> ConversationListApiResponse:
+    """List persisted local conversations for one session."""
+    request_id = get_request_id(request)
+    if store.get_session(session_id) is None:
+        raise _api_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            error="session_not_found",
+            message="session not found",
+        )
+    return ConversationListApiResponse(
+        request_id=request_id,
+        conversations=store.list_conversations(session_id),
+    )
+
+
+@router.get(
+    "/conversations/{conversation_id}",
+    response_model=ConversationApiResponse,
+)
+async def get_conversation(
+    request: Request,
+    conversation_id: str,
+    store: Annotated[MessageStore, Depends(get_message_store)],
+) -> ConversationApiResponse:
+    """Return one persisted local conversation."""
+    request_id = get_request_id(request)
+    conversation = store.get_conversation(conversation_id)
+    if conversation is None:
+        raise _api_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            error="conversation_not_found",
+            message="conversation not found",
+        )
+    return ConversationApiResponse(
+        request_id=request_id,
+        conversation=conversation,
     )
 
 

@@ -1,10 +1,12 @@
 """FastAPI dependency construction."""
 
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import Depends
 
 from aigentego.llm import LlmProvider, build_llm_provider
+from aigentego.persistence import MessageStore, open_sqlite_database
 from aigentego.settings import Settings
 from aigentego.tools import CalculatorTool, ToolExecutor, ToolRegistry
 
@@ -31,3 +33,14 @@ def get_tool_executor(
 ) -> ToolExecutor:
     """Build the deterministic tool executor."""
     return ToolExecutor(registry)
+
+
+async def get_message_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AsyncIterator[MessageStore]:
+    """Build a request-scoped local persistence store."""
+    connection = open_sqlite_database(settings.sqlite_path)
+    try:
+        yield MessageStore(connection)
+    finally:
+        connection.close()
