@@ -117,6 +117,38 @@ class Message(BaseModel):
         return _validate_optional_timezone_aware_datetime(value)
 
 
+class MemorySummary(BaseModel):
+    """Inspectable local summary for one persisted conversation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    summary_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    conversation_id: str = Field(min_length=1)
+    content: str = Field(min_length=1)
+    revision: int = Field(default=1, ge=1)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    @field_validator("summary_id", "session_id", "conversation_id", "content")
+    @classmethod
+    def validate_text(cls, value: str | None) -> str | None:
+        """Reject blank identifiers and summary content."""
+        return _validate_optional_text(value)
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def validate_timestamp(cls, value: datetime | None) -> datetime | None:
+        """Require caller-supplied timestamps to be timezone-aware."""
+        return _validate_optional_timezone_aware_datetime(value)
+
+    @model_validator(mode="after")
+    def validate_timestamp_order(self) -> Self:
+        """Keep caller-supplied updated_at after created_at."""
+        _validate_timestamp_order(self.created_at, self.updated_at)
+        return self
+
+
 def _validate_optional_text(value: str | None) -> str | None:
     if value is not None and not value.strip():
         raise ValueError("text fields must not be blank")
@@ -144,6 +176,7 @@ __all__ = [
     "ConversationStatus",
     "Message",
     "MessageRole",
+    "MemorySummary",
     "Session",
     "SessionStatus",
 ]

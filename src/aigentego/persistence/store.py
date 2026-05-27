@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime
 from typing import Any
 
-from aigentego.persistence.models import Conversation, Message, Session
+from aigentego.persistence.models import Conversation, MemorySummary, Message, Session
 
 
 class MessageStore:
@@ -250,6 +250,130 @@ class MessageStore:
         ).fetchall()
         return [_message_from_row(row) for row in rows]
 
+    def upsert_memory_summary(self, summary: MemorySummary) -> MemorySummary:
+        """Create or update a conversation memory summary."""
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO memory_summaries (
+                    summary_id,
+                    session_id,
+                    conversation_id,
+                    content,
+                    revision,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(summary_id) DO UPDATE SET
+                    session_id = excluded.session_id,
+                    conversation_id = excluded.conversation_id,
+                    content = excluded.content,
+                    revision = excluded.revision,
+                    created_at = excluded.created_at,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    summary.summary_id,
+                    summary.session_id,
+                    summary.conversation_id,
+                    summary.content,
+                    summary.revision,
+                    _format_datetime(summary.created_at),
+                    _format_datetime(summary.updated_at),
+                ),
+            )
+        stored = self.get_memory_summary(summary.summary_id)
+        if stored is None:
+            raise RuntimeError("failed to upsert memory summary")
+        return stored
+
+    def get_memory_summary(self, summary_id: str) -> MemorySummary | None:
+        """Return one memory summary by id when present."""
+        row = self._connection.execute(
+            """
+            SELECT
+                summary_id,
+                session_id,
+                conversation_id,
+                content,
+                revision,
+                created_at,
+                updated_at
+            FROM memory_summaries
+            WHERE summary_id = ?
+            """,
+            (summary_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return _memory_summary_from_row(row)
+
+    def get_latest_memory_summary(
+        self,
+        conversation_id: str,
+    ) -> MemorySummary | None:
+        """Return the highest-revision summary for a conversation."""
+        row = self._connection.execute(
+            """
+            SELECT
+                summary_id,
+                session_id,
+                conversation_id,
+                content,
+                revision,
+                created_at,
+                updated_at
+            FROM memory_summaries
+            WHERE conversation_id = ?
+            ORDER BY revision DESC, summary_id ASC
+            LIMIT 1
+            """,
+            (conversation_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return _memory_summary_from_row(row)
+
+    def list_memory_summaries(
+        self,
+        conversation_id: str | None = None,
+    ) -> list[MemorySummary]:
+        """Return memory summaries in deterministic revision order."""
+        if conversation_id is None:
+            rows = self._connection.execute(
+                """
+                SELECT
+                    summary_id,
+                    session_id,
+                    conversation_id,
+                    content,
+                    revision,
+                    created_at,
+                    updated_at
+                FROM memory_summaries
+                ORDER BY conversation_id ASC, revision ASC, summary_id ASC
+                """,
+            ).fetchall()
+        else:
+            rows = self._connection.execute(
+                """
+                SELECT
+                    summary_id,
+                    session_id,
+                    conversation_id,
+                    content,
+                    revision,
+                    created_at,
+                    updated_at
+                FROM memory_summaries
+                WHERE conversation_id = ?
+                ORDER BY revision ASC, summary_id ASC
+                """,
+                (conversation_id,),
+            ).fetchall()
+        return [_memory_summary_from_row(row) for row in rows]
+
     def _next_message_sequence(self, conversation_id: str) -> int:
         row = self._connection.execute(
             """
@@ -274,6 +398,10 @@ def _conversation_from_row(row: sqlite3.Row) -> Conversation:
 
 def _message_from_row(row: sqlite3.Row) -> Message:
     return Message.model_validate(_row_to_dict(row))
+
+
+def _memory_summary_from_row(row: sqlite3.Row) -> MemorySummary:
+    return MemorySummary.model_validate(_row_to_dict(row))
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:

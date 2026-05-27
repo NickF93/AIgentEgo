@@ -3,6 +3,7 @@
 from aigentego.persistence.models import (
     Conversation,
     ConversationStatus,
+    MemorySummary,
     Message,
     MessageRole,
     Session,
@@ -24,6 +25,7 @@ __all__ = [
     "Message",
     "MessageRole",
     "MessageStore",
+    "MemorySummary",
     "Session",
     "SessionStatus",
     "connect_sqlite",

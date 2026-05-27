@@ -52,7 +52,8 @@ def test_schema_initialization_creates_persistence_tables(tmp_path) -> None:
                     'schema_metadata',
                     'sessions',
                     'conversations',
-                    'messages'
+                    'messages',
+                    'memory_summaries'
                 )
             ORDER BY name
             """,
@@ -62,6 +63,7 @@ def test_schema_initialization_creates_persistence_tables(tmp_path) -> None:
 
     assert [row["name"] for row in rows] == [
         "conversations",
+        "memory_summaries",
         "messages",
         "schema_metadata",
         "sessions",

@@ -56,6 +56,23 @@ CREATE TABLE IF NOT EXISTS messages (
 )
 """
 
+_MEMORY_SUMMARIES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS memory_summaries (
+    summary_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision >= 1),
+    created_at TEXT,
+    updated_at TEXT,
+    UNIQUE (conversation_id, revision),
+    FOREIGN KEY (session_id) REFERENCES sessions (session_id) ON DELETE CASCADE,
+    FOREIGN KEY (session_id, conversation_id)
+        REFERENCES conversations (session_id, conversation_id)
+        ON DELETE CASCADE
+)
+"""
+
 _CONVERSATIONS_SESSION_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_conversations_session_id
 ON conversations (session_id)
@@ -64,6 +81,11 @@ ON conversations (session_id)
 _MESSAGES_CONVERSATION_SEQUENCE_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_sequence
 ON messages (conversation_id, sequence_index)
+"""
+
+_MEMORY_SUMMARIES_CONVERSATION_REVISION_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_memory_summaries_conversation_revision
+ON memory_summaries (conversation_id, revision DESC)
 """
 
 
@@ -106,8 +128,10 @@ def initialize_sqlite_schema(connection: sqlite3.Connection) -> None:
     connection.execute(_SESSIONS_TABLE_SQL)
     connection.execute(_CONVERSATIONS_TABLE_SQL)
     connection.execute(_MESSAGES_TABLE_SQL)
+    connection.execute(_MEMORY_SUMMARIES_TABLE_SQL)
     connection.execute(_CONVERSATIONS_SESSION_INDEX_SQL)
     connection.execute(_MESSAGES_CONVERSATION_SEQUENCE_INDEX_SQL)
+    connection.execute(_MEMORY_SUMMARIES_CONVERSATION_REVISION_INDEX_SQL)
     connection.execute(
         """
         INSERT INTO schema_metadata (key, value)
