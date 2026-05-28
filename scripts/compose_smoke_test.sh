@@ -250,6 +250,79 @@ if not isinstance(result, dict) or result.get("value") != 372:
 ' "$AGENT_PORT"
 }
 
+agent_persistence() {
+    docker compose -p "$PROJECT_NAME" exec -T agent-api python -c '
+import json
+import sys
+import urllib.request
+
+base_url = "http://127.0.0.1:" + sys.argv[1]
+
+
+def request_json(path, *, method="GET", payload=None, request_id=None):
+    headers = {}
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    if request_id is not None:
+        headers["X-Request-ID"] = request_id
+    request = urllib.request.Request(
+        base_url + path,
+        data=data,
+        headers=headers,
+        method=method,
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return json.load(response), response.headers.get("X-Request-ID")
+
+
+session, session_request_id = request_json(
+    "/sessions",
+    method="POST",
+    payload={"session_id": "compose-smoke-session", "title": "Compose smoke"},
+    request_id="compose-smoke-session-request",
+)
+if session_request_id != "compose-smoke-session-request":
+    raise SystemExit("session response X-Request-ID header was not preserved")
+if session.get("session", {}).get("session_id") != "compose-smoke-session":
+    raise SystemExit("session response has unexpected session_id")
+
+sessions, _ = request_json("/sessions")
+if "compose-smoke-session" not in [
+    item.get("session_id") for item in sessions.get("sessions", [])
+]:
+    raise SystemExit("created session was not listed")
+
+conversation, _ = request_json(
+    "/sessions/compose-smoke-session/conversations",
+    method="POST",
+    payload={
+        "conversation_id": "compose-smoke-conversation",
+        "title": "Compose smoke conversation",
+        "is_default": True,
+    },
+)
+if (
+    conversation.get("conversation", {}).get("conversation_id")
+    != "compose-smoke-conversation"
+):
+    raise SystemExit("conversation response has unexpected conversation_id")
+
+conversations, _ = request_json(
+    "/sessions/compose-smoke-session/conversations",
+)
+if "compose-smoke-conversation" not in [
+    item.get("conversation_id") for item in conversations.get("conversations", [])
+]:
+    raise SystemExit("created conversation was not listed")
+
+fetched, _ = request_json("/conversations/compose-smoke-conversation")
+if fetched.get("conversation", {}).get("session_id") != "compose-smoke-session":
+    raise SystemExit("conversation fetch has unexpected session_id")
+' "$AGENT_PORT"
+}
+
 trap cleanup EXIT INT TERM
 
 cleanup
@@ -268,3 +341,4 @@ agent_get /diagnostics
 agent_chat
 agent_tools
 agent_calculator
+agent_persistence

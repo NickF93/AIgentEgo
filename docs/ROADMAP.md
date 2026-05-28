@@ -8,12 +8,15 @@ developer-facing UX.
 
 ## Current Status
 
-MVP 0.1, MVP 0.2, MVP 0.2.7, MVP 0.3, MVP 0.3.7, and MVP 0.4 are completed.
+MVP 0.1, MVP 0.2, MVP 0.2.7, MVP 0.3, MVP 0.3.7, MVP 0.4, and MVP 0.5
+are completed.
 MVP 0.3 closed single-step LLM structured output to deterministic ToolCall
 handling while keeping execution bounded and provider-neutral. MVP 0.3.7 added
 optional llama.cpp backend compatibility behind the same `LlmProvider`
 boundary. MVP 0.4 added bounded Agent Loop v1 with inspectable `AgentRun` and
-`AgentStep` state.
+`AgentStep` state. MVP 0.5 added explicit local SQLite persistence, sessions,
+conversations, ordered messages, conversation-scoped memory summaries, and
+persistent chat context injection from local conversation state.
 
 MVP 0.1 provides the local LLM runtime foundation:
 
@@ -47,9 +50,9 @@ MVP 0.2 adds the deterministic tool runtime:
 - README documentation for explicit API-driven tools
 
 AIgentEgo is still not a complete agent runtime. The following capabilities are
-not implemented yet: persistent memory, RAG, notes search, file access, calendar
-integration, Python sandbox, CLI, streaming, MCP, live external integrations,
-and persisted multi-turn conversation state.
+not implemented yet: RAG, notes search, file access, calendar integration,
+Python sandbox, CLI, streaming, MCP, live external integrations, automatic
+memory summary generation, and retrieval over external sources.
 
 ## Roadmap Principles
 
@@ -70,7 +73,7 @@ and persisted multi-turn conversation state.
 | `0.3` | LLM structured output to ToolCall | Completed | Model-produced structured tool calls | Let the LLM request bounded tool calls through validated structured output |
 | `0.3.7` | llama.cpp backend compatibility | Completed | Additional local backend adapter and capability comparison | Compare Ollama and llama.cpp behavior before building the agent loop |
 | `0.4` | Agent loop v1 | Completed | Bounded inspectable agent execution | Run a minimal agent loop with limits, observations, and `/agent/run` |
-| `0.5` | Persistent conversations and memory | Planned | Local persistence and conversation memory | Resume sessions and inject saved context into chat or agent runs |
+| `0.5` | Persistent conversations and memory | Completed | Local persistence and conversation memory | Resume explicit conversations and inject saved local context into persistent chat |
 | `0.6` | Notes search, read-only filesystem, and RAG v1 | Planned | Local retrieval over explicit read-only roots | Search notes/files and use retrieved snippets as grounded context |
 | `0.7` | Calendar integration | Planned | Calendar query tools and adapters | Query local/fake calendars first, with approval-gated write intent later |
 | `0.8` | Python sandbox | Planned | Restricted Python execution | Run approved Python snippets inside a constrained sandbox |
@@ -252,11 +255,31 @@ High-level sprint blocks:
 
 ## `0.5` Persistent Conversations and Memory
 
-Status: planned.
+Status: completed.
 
-This milestone enables persisted multi-turn interaction. SQLite is the
-preferred first storage backend for local-first MVP work. Postgres or external
-storage may be deferred until there is a clear operational reason to add it.
+This milestone enables explicit persisted multi-turn interaction. SQLite is the
+local-first storage substrate. Existing stateless `/chat` and bounded
+`/agent/run` behavior remain unchanged unless callers opt into the
+conversation-scoped persistent chat endpoint.
+
+Completed behavior:
+
+- Local SQLite configuration through `sqlite_path`, `SQLITE_PATH`, and
+  `AIGENTEGO_SQLITE_PATH`.
+- Strict session, conversation, message, and memory summary models.
+- A deterministic local message store with ordered conversation messages.
+- Explicit session and conversation APIs.
+- Conversation-scoped persistent chat through
+  `POST /conversations/{conversation_id}/chat`.
+- All-or-nothing persistence for a new persistent chat turn when the provider
+  fails.
+- Conversation-scoped memory summary records.
+- Persistent chat context built from prior local conversation messages and the
+  latest local memory summary.
+
+This milestone does not add automatic summary generation, RAG, vector
+retrieval, notes search, filesystem access, calendar integration, sandboxing,
+CLI, streaming, MCP, live external integrations, or placeholder future modules.
 
 High-level sprint blocks:
 
@@ -267,7 +290,7 @@ High-level sprint blocks:
 - `0.5.4` = multi-turn chat with session id
 - `0.5.5` = memory summary model
 - `0.5.6` = conversation context injection
-- `0.5.7` = tests, migration policy, and README update
+- `0.5.7` = tests, smoke coverage, documentation, roadmap, and closure
 
 ## `0.6` Notes Search, Read-Only Filesystem, and RAG v1
 
@@ -402,11 +425,12 @@ hold for one backend.
 
 The bounded agent loop follows structured ToolCalls and backend compatibility
 because it needs a reliable way to alternate between model output and tool
-observations. Memory, RAG, files, calendar, and sandboxing come after the loop
-because they add state, external data, or security-sensitive execution
-surfaces. Streaming and CLI come after the core runtime behavior is stable, and
-the final milestone focuses on evaluation, hardening, documentation, and
-release readiness.
+observations. Persistent conversations and memory come after the loop because
+they add explicit local state. RAG, files, calendar, and sandboxing come later
+because they add external data or security-sensitive execution surfaces.
+Streaming and CLI come after the core runtime behavior is stable, and the final
+milestone focuses on evaluation, hardening, documentation, and release
+readiness.
 
 ## Contribution and Planning Note
 
