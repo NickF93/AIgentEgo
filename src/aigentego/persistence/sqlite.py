@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SCHEMA_VERSION_KEY = "schema_version"
 
 _METADATA_TABLE_SQL = """
@@ -73,6 +73,18 @@ CREATE TABLE IF NOT EXISTS memory_summaries (
 )
 """
 
+_NOTE_FILES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS note_files (
+    path TEXT PRIMARY KEY,
+    root_path TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+    modified_time_ns INTEGER NOT NULL CHECK (modified_time_ns >= 0),
+    extension TEXT NOT NULL CHECK (extension IN ('.md', '.markdown', '.txt')),
+    UNIQUE (root_path, relative_path)
+)
+"""
+
 _CONVERSATIONS_SESSION_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_conversations_session_id
 ON conversations (session_id)
@@ -86,6 +98,11 @@ ON messages (conversation_id, sequence_index)
 _MEMORY_SUMMARIES_CONVERSATION_REVISION_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_memory_summaries_conversation_revision
 ON memory_summaries (conversation_id, revision DESC)
+"""
+
+_NOTE_FILES_ROOT_RELATIVE_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_note_files_root_relative
+ON note_files (root_path, relative_path)
 """
 
 
@@ -129,9 +146,11 @@ def initialize_sqlite_schema(connection: sqlite3.Connection) -> None:
     connection.execute(_CONVERSATIONS_TABLE_SQL)
     connection.execute(_MESSAGES_TABLE_SQL)
     connection.execute(_MEMORY_SUMMARIES_TABLE_SQL)
+    connection.execute(_NOTE_FILES_TABLE_SQL)
     connection.execute(_CONVERSATIONS_SESSION_INDEX_SQL)
     connection.execute(_MESSAGES_CONVERSATION_SEQUENCE_INDEX_SQL)
     connection.execute(_MEMORY_SUMMARIES_CONVERSATION_REVISION_INDEX_SQL)
+    connection.execute(_NOTE_FILES_ROOT_RELATIVE_INDEX_SQL)
     connection.execute(
         """
         INSERT INTO schema_metadata (key, value)

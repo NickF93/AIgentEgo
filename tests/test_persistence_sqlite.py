@@ -53,7 +53,8 @@ def test_schema_initialization_creates_persistence_tables(tmp_path) -> None:
                     'sessions',
                     'conversations',
                     'messages',
-                    'memory_summaries'
+                    'memory_summaries',
+                    'note_files'
                 )
             ORDER BY name
             """,
@@ -65,6 +66,7 @@ def test_schema_initialization_creates_persistence_tables(tmp_path) -> None:
         "conversations",
         "memory_summaries",
         "messages",
+        "note_files",
         "schema_metadata",
         "sessions",
     ]
