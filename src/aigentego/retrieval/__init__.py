@@ -32,7 +32,17 @@ from aigentego.retrieval.ingestion import (
     ingest_note_path,
     normalize_note_text,
 )
+from aigentego.retrieval.search import (
+    DEFAULT_NOTE_SEARCH_TOP_K,
+    NoteSearchError,
+    NoteSearchPipeline,
+    NoteSearchRequest,
+    NoteSearchResponse,
+    NoteSearchResponseError,
+    NoteSearchResult,
+)
 from aigentego.retrieval.store import (
+    EmbeddedNoteChunk,
     FileMetadataStore,
     NoteChunkStore,
     NoteEmbeddingStore,
@@ -41,6 +51,8 @@ from aigentego.retrieval.store import (
 __all__ = [
     "AllowedRoot",
     "DEFAULT_CHUNK_SIZE_CHARS",
+    "DEFAULT_NOTE_SEARCH_TOP_K",
+    "EmbeddedNoteChunk",
     "FileMetadata",
     "FileMetadataStore",
     "FilesystemAccessError",
@@ -56,6 +68,12 @@ __all__ = [
     "NoteEmbeddingStore",
     "NoteIngestionError",
     "NoteIngestionResult",
+    "NoteSearchError",
+    "NoteSearchPipeline",
+    "NoteSearchRequest",
+    "NoteSearchResponse",
+    "NoteSearchResponseError",
+    "NoteSearchResult",
     "PathOutsideAllowedRootsError",
     "ReadOnlyFilesystemPolicy",
     "SUPPORTED_NOTE_EXTENSIONS",

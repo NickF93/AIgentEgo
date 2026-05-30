@@ -9,6 +9,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 from aigentego.retrieval.embeddings import NoteChunkEmbedding
 from aigentego.retrieval.file_discovery import FileMetadata
 from aigentego.retrieval.filesystem_policy import (
@@ -20,6 +22,27 @@ from aigentego.retrieval.ingestion import (
     NoteDocument,
     NoteIngestionResult,
 )
+
+
+class EmbeddedNoteChunk(BaseModel):
+    """A persisted note chunk with its local embedding and safe source path."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    chunk: NoteChunk
+    embedding: NoteChunkEmbedding
+    relative_path: str = Field(min_length=1)
+
+    @field_validator("relative_path")
+    @classmethod
+    def validate_relative_path(cls, value: str) -> str:
+        """Keep retrieval source metadata relative to its configured root."""
+        if not value.strip():
+            raise ValueError("relative_path must not be blank")
+        path = Path(value)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError("relative_path must stay within the allowed root")
+        return value
 
 
 class FileMetadataStore:
@@ -464,6 +487,39 @@ class NoteEmbeddingStore:
                 missing_chunks.append(chunk)
         return missing_chunks
 
+    def list_embedded_chunks(self, model: str) -> list[EmbeddedNoteChunk]:
+        """Return embedded chunks with safe metadata in deterministic source order."""
+        model_name = _validate_model(model)
+        rows = self._connection.execute(
+            """
+            SELECT
+                c.chunk_id AS chunk_id,
+                c.document_id AS document_id,
+                c.chunk_index AS chunk_index,
+                c.content AS content,
+                c.content_length AS content_length,
+                c.content_hash AS content_hash,
+                f.relative_path AS relative_path,
+                e.model AS embedding_model,
+                e.dimensions AS embedding_dimensions,
+                e.vector_json AS embedding_vector_json,
+                e.chunk_content_hash AS embedding_chunk_content_hash
+            FROM note_chunk_embeddings AS e
+            JOIN note_chunks AS c ON c.chunk_id = e.chunk_id
+            JOIN note_documents AS d ON d.document_id = c.document_id
+            JOIN note_files AS f ON f.path = d.file_path
+            WHERE e.model = ?
+            ORDER BY
+                f.root_path ASC,
+                f.relative_path ASC,
+                c.chunk_index ASC,
+                c.document_id ASC,
+                c.chunk_id ASC
+            """,
+            (model_name,),
+        ).fetchall()
+        return [_embedded_chunk_from_row(row) for row in rows]
+
 
 def _metadata_from_row(row: sqlite3.Row) -> FileMetadata:
     return FileMetadata.model_validate(_row_to_dict(row))
@@ -497,6 +553,29 @@ def _embedding_from_row(row: sqlite3.Row) -> NoteChunkEmbedding:
         dimensions=row["dimensions"],
         vector=_vector_from_json(row["vector_json"]),
         chunk_content_hash=row["chunk_content_hash"],
+    )
+
+
+def _embedded_chunk_from_row(row: sqlite3.Row) -> EmbeddedNoteChunk:
+    chunk = NoteChunk(
+        chunk_id=row["chunk_id"],
+        document_id=row["document_id"],
+        chunk_index=row["chunk_index"],
+        content=row["content"],
+        content_length=row["content_length"],
+        content_hash=row["content_hash"],
+    )
+    embedding = NoteChunkEmbedding(
+        chunk_id=row["chunk_id"],
+        model=row["embedding_model"],
+        dimensions=row["embedding_dimensions"],
+        vector=_vector_from_json(row["embedding_vector_json"]),
+        chunk_content_hash=row["embedding_chunk_content_hash"],
+    )
+    return EmbeddedNoteChunk(
+        chunk=chunk,
+        embedding=embedding,
+        relative_path=row["relative_path"],
     )
 
 
@@ -584,4 +663,9 @@ def _vector_from_json(value: str) -> tuple[float, ...]:
     return tuple(vector)
 
 
-__all__ = ["FileMetadataStore", "NoteChunkStore", "NoteEmbeddingStore"]
+__all__ = [
+    "EmbeddedNoteChunk",
+    "FileMetadataStore",
+    "NoteChunkStore",
+    "NoteEmbeddingStore",
+]
