@@ -1,5 +1,12 @@
 """Local retrieval safety boundaries."""
 
+from aigentego.retrieval.embeddings import (
+    NoteChunkEmbedding,
+    NoteEmbeddingError,
+    NoteEmbeddingPipeline,
+    NoteEmbeddingResponseError,
+    build_note_chunk_embeddings,
+)
 from aigentego.retrieval.file_discovery import (
     SUPPORTED_NOTE_EXTENSIONS,
     FileMetadata,
@@ -25,7 +32,11 @@ from aigentego.retrieval.ingestion import (
     ingest_note_path,
     normalize_note_text,
 )
-from aigentego.retrieval.store import FileMetadataStore, NoteChunkStore
+from aigentego.retrieval.store import (
+    FileMetadataStore,
+    NoteChunkStore,
+    NoteEmbeddingStore,
+)
 
 __all__ = [
     "AllowedRoot",
@@ -35,15 +46,21 @@ __all__ = [
     "FilesystemAccessError",
     "InvalidAllowedRootError",
     "NoteChunk",
+    "NoteChunkEmbedding",
     "NoteChunkStore",
     "NoteDecodeError",
     "NoteDocument",
+    "NoteEmbeddingError",
+    "NoteEmbeddingPipeline",
+    "NoteEmbeddingResponseError",
+    "NoteEmbeddingStore",
     "NoteIngestionError",
     "NoteIngestionResult",
     "PathOutsideAllowedRootsError",
     "ReadOnlyFilesystemPolicy",
     "SUPPORTED_NOTE_EXTENSIONS",
     "UnsupportedNoteFileError",
+    "build_note_chunk_embeddings",
     "chunk_note_document",
     "discover_note_files",
     "ingest_note_file",

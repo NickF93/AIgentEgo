@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 SCHEMA_VERSION_KEY = "schema_version"
 
 _METADATA_TABLE_SQL = """
@@ -110,6 +110,20 @@ CREATE TABLE IF NOT EXISTS note_chunks (
 )
 """
 
+_NOTE_CHUNK_EMBEDDINGS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS note_chunk_embeddings (
+    chunk_id TEXT NOT NULL,
+    model TEXT NOT NULL,
+    dimensions INTEGER NOT NULL CHECK (dimensions >= 1),
+    vector_json TEXT NOT NULL,
+    chunk_content_hash TEXT NOT NULL,
+    PRIMARY KEY (chunk_id, model),
+    FOREIGN KEY (chunk_id)
+        REFERENCES note_chunks (chunk_id)
+        ON DELETE CASCADE
+)
+"""
+
 _CONVERSATIONS_SESSION_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_conversations_session_id
 ON conversations (session_id)
@@ -138,6 +152,11 @@ ON note_documents (file_path)
 _NOTE_CHUNKS_DOCUMENT_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_note_chunks_document_index
 ON note_chunks (document_id, chunk_index)
+"""
+
+_NOTE_CHUNK_EMBEDDINGS_MODEL_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_note_chunk_embeddings_model
+ON note_chunk_embeddings (model, chunk_id)
 """
 
 
@@ -184,12 +203,14 @@ def initialize_sqlite_schema(connection: sqlite3.Connection) -> None:
     connection.execute(_NOTE_FILES_TABLE_SQL)
     connection.execute(_NOTE_DOCUMENTS_TABLE_SQL)
     connection.execute(_NOTE_CHUNKS_TABLE_SQL)
+    connection.execute(_NOTE_CHUNK_EMBEDDINGS_TABLE_SQL)
     connection.execute(_CONVERSATIONS_SESSION_INDEX_SQL)
     connection.execute(_MESSAGES_CONVERSATION_SEQUENCE_INDEX_SQL)
     connection.execute(_MEMORY_SUMMARIES_CONVERSATION_REVISION_INDEX_SQL)
     connection.execute(_NOTE_FILES_ROOT_RELATIVE_INDEX_SQL)
     connection.execute(_NOTE_DOCUMENTS_FILE_PATH_INDEX_SQL)
     connection.execute(_NOTE_CHUNKS_DOCUMENT_INDEX_SQL)
+    connection.execute(_NOTE_CHUNK_EMBEDDINGS_MODEL_INDEX_SQL)
     connection.execute(
         """
         INSERT INTO schema_metadata (key, value)

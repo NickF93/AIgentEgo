@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import math
 import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from aigentego.retrieval.embeddings import NoteChunkEmbedding
 from aigentego.retrieval.file_discovery import FileMetadata
 from aigentego.retrieval.filesystem_policy import (
     PathOutsideAllowedRootsError,
@@ -319,6 +323,148 @@ class NoteChunkStore:
         return chunk
 
 
+class NoteEmbeddingStore:
+    """Persist provider-neutral embeddings for ingested note chunks."""
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        self._connection = connection
+
+    def upsert_embedding(
+        self,
+        embedding: NoteChunkEmbedding,
+    ) -> NoteChunkEmbedding:
+        """Create or replace one local chunk embedding."""
+        return self.upsert_embeddings([embedding])[0]
+
+    def upsert_embeddings(
+        self,
+        embeddings: Sequence[NoteChunkEmbedding],
+    ) -> list[NoteChunkEmbedding]:
+        """Create or replace local chunk embeddings in one transaction."""
+        if not embeddings:
+            return []
+
+        with self._connection:
+            for embedding in embeddings:
+                self._connection.execute(
+                    """
+                    INSERT INTO note_chunk_embeddings (
+                        chunk_id,
+                        model,
+                        dimensions,
+                        vector_json,
+                        chunk_content_hash
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(chunk_id, model) DO UPDATE SET
+                        dimensions = excluded.dimensions,
+                        vector_json = excluded.vector_json,
+                        chunk_content_hash = excluded.chunk_content_hash
+                    """,
+                    (
+                        embedding.chunk_id,
+                        embedding.model,
+                        embedding.dimensions,
+                        _vector_to_json(embedding.vector),
+                        embedding.chunk_content_hash,
+                    ),
+                )
+
+        stored_embeddings: list[NoteChunkEmbedding] = []
+        for embedding in embeddings:
+            stored = self.get_embedding(embedding.chunk_id, embedding.model)
+            if stored is None:
+                raise RuntimeError("failed to upsert note chunk embedding")
+            stored_embeddings.append(stored)
+        return stored_embeddings
+
+    def get_embedding(
+        self,
+        chunk_id: str,
+        model: str,
+    ) -> NoteChunkEmbedding | None:
+        """Return one chunk embedding by chunk and model."""
+        model_name = _validate_model(model)
+        row = self._connection.execute(
+            """
+            SELECT
+                chunk_id,
+                model,
+                dimensions,
+                vector_json,
+                chunk_content_hash
+            FROM note_chunk_embeddings
+            WHERE chunk_id = ? AND model = ?
+            """,
+            (chunk_id, model_name),
+        ).fetchone()
+        if row is None:
+            return None
+        return _embedding_from_row(row)
+
+    def list_embeddings(self, model: str | None = None) -> list[NoteChunkEmbedding]:
+        """Return local embeddings in deterministic source order."""
+        if model is None:
+            rows = self._connection.execute(
+                """
+                SELECT
+                    e.chunk_id AS chunk_id,
+                    e.model AS model,
+                    e.dimensions AS dimensions,
+                    e.vector_json AS vector_json,
+                    e.chunk_content_hash AS chunk_content_hash
+                FROM note_chunk_embeddings AS e
+                JOIN note_chunks AS c ON c.chunk_id = e.chunk_id
+                JOIN note_documents AS d ON d.document_id = c.document_id
+                JOIN note_files AS f ON f.path = d.file_path
+                ORDER BY
+                    e.model ASC,
+                    f.root_path ASC,
+                    f.relative_path ASC,
+                    c.chunk_index ASC,
+                    e.chunk_id ASC
+                """,
+            ).fetchall()
+        else:
+            model_name = _validate_model(model)
+            rows = self._connection.execute(
+                """
+                SELECT
+                    e.chunk_id AS chunk_id,
+                    e.model AS model,
+                    e.dimensions AS dimensions,
+                    e.vector_json AS vector_json,
+                    e.chunk_content_hash AS chunk_content_hash
+                FROM note_chunk_embeddings AS e
+                JOIN note_chunks AS c ON c.chunk_id = e.chunk_id
+                JOIN note_documents AS d ON d.document_id = c.document_id
+                JOIN note_files AS f ON f.path = d.file_path
+                WHERE e.model = ?
+                ORDER BY
+                    f.root_path ASC,
+                    f.relative_path ASC,
+                    c.chunk_index ASC,
+                    e.chunk_id ASC
+                """,
+                (model_name,),
+            ).fetchall()
+        return [_embedding_from_row(row) for row in rows]
+
+    def list_chunks_missing_embeddings(
+        self,
+        chunks: Sequence[NoteChunk],
+        model: str,
+    ) -> list[NoteChunk]:
+        """Return chunks that need embeddings for a model."""
+        model_name = _validate_model(model)
+        missing_chunks: list[NoteChunk] = []
+        for chunk in chunks:
+            existing = self.get_embedding(chunk.chunk_id, model_name)
+            if existing is None or existing.chunk_content_hash != chunk.content_hash:
+                missing_chunks.append(chunk)
+        return missing_chunks
+
+
 def _metadata_from_row(row: sqlite3.Row) -> FileMetadata:
     return FileMetadata.model_validate(_row_to_dict(row))
 
@@ -342,6 +488,16 @@ def _document_from_row(row: sqlite3.Row) -> NoteDocument:
 
 def _chunk_from_row(row: sqlite3.Row) -> NoteChunk:
     return NoteChunk.model_validate(_row_to_dict(row))
+
+
+def _embedding_from_row(row: sqlite3.Row) -> NoteChunkEmbedding:
+    return NoteChunkEmbedding(
+        chunk_id=row["chunk_id"],
+        model=row["model"],
+        dimensions=row["dimensions"],
+        vector=_vector_from_json(row["vector_json"]),
+        chunk_content_hash=row["chunk_content_hash"],
+    )
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -402,4 +558,30 @@ def _upsert_file_metadata(
     )
 
 
-__all__ = ["FileMetadataStore", "NoteChunkStore"]
+def _validate_model(model: str) -> str:
+    model_name = model.strip()
+    if not model_name:
+        raise ValueError("embedding model must not be blank")
+    return model_name
+
+
+def _vector_to_json(vector: tuple[float, ...]) -> str:
+    return json.dumps(list(vector), separators=(",", ":"), allow_nan=False)
+
+
+def _vector_from_json(value: str) -> tuple[float, ...]:
+    data = json.loads(value)
+    if not isinstance(data, list):
+        raise ValueError("stored embedding vector must be a JSON list")
+    vector: list[float] = []
+    for number in data:
+        if not isinstance(number, int | float) or isinstance(number, bool):
+            raise ValueError("stored embedding vector values must be numeric")
+        parsed = float(number)
+        if not math.isfinite(parsed):
+            raise ValueError("stored embedding vector values must be finite")
+        vector.append(parsed)
+    return tuple(vector)
+
+
+__all__ = ["FileMetadataStore", "NoteChunkStore", "NoteEmbeddingStore"]
