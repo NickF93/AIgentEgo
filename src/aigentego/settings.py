@@ -24,6 +24,10 @@ class Settings(BaseSettings):
         default="nomic-embed-text",
         validation_alias=AliasChoices("EMBEDDING_MODEL", "OLLAMA_EMBED_MODEL"),
     )
+    sqlite_path: str = Field(
+        default=".aigentego/aigentego.sqlite3",
+        validation_alias=AliasChoices("SQLITE_PATH", "AIGENTEGO_SQLITE_PATH"),
+    )
     request_timeout_seconds: int = 120
     log_level: str = "INFO"
 

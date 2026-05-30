@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from aigentego.agents import AgentLoopLimits
+from aigentego.persistence import Conversation, Session
 from aigentego.tools import ToolDefinition, ToolErrorDetail
 
 
@@ -55,6 +56,16 @@ class ChatApiResponse(BaseModel):
     message: str
 
 
+class PersistentChatApiResponse(BaseModel):
+    """Public response for an explicitly persisted chat turn."""
+
+    request_id: str
+    session_id: str
+    conversation_id: str
+    model: str
+    message: str
+
+
 class AgentRunApiRequest(BaseModel):
     """Public bounded agent run request."""
 
@@ -96,6 +107,65 @@ class AgentRunApiRequest(BaseModel):
         )
 
 
+class SessionCreateApiRequest(BaseModel):
+    """Public request for explicitly creating or updating a session."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(min_length=1)
+    title: str | None = None
+
+    @field_validator("session_id", "title")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        """Reject blank identifiers and optional titles after trimming."""
+        return _strip_optional_text(value)
+
+
+class SessionApiResponse(BaseModel):
+    """Public response containing one persisted session."""
+
+    request_id: str
+    session: Session
+
+
+class SessionListApiResponse(BaseModel):
+    """Public response containing persisted sessions."""
+
+    request_id: str
+    sessions: list[Session]
+
+
+class ConversationCreateApiRequest(BaseModel):
+    """Public request for explicitly creating or updating a conversation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    conversation_id: str = Field(min_length=1)
+    title: str | None = None
+    is_default: bool = False
+
+    @field_validator("conversation_id", "title")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        """Reject blank identifiers and optional titles after trimming."""
+        return _strip_optional_text(value)
+
+
+class ConversationApiResponse(BaseModel):
+    """Public response containing one persisted conversation."""
+
+    request_id: str
+    conversation: Conversation
+
+
+class ConversationListApiResponse(BaseModel):
+    """Public response containing persisted conversations."""
+
+    request_id: str
+    conversations: list[Conversation]
+
+
 class ApiErrorResponse(BaseModel):
     """Structured API error body."""
 
@@ -126,3 +196,12 @@ class ToolExecuteApiResponse(BaseModel):
     success: bool
     result: dict[str, Any] | None = None
     error: ToolErrorDetail | None = None
+
+
+def _strip_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        raise ValueError("text fields must not be blank")
+    return stripped

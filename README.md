@@ -13,15 +13,17 @@ can build, start, pull the configured Ollama models, answer a basic chat
 request, expose deterministic tools, execute an explicitly requested calculator
 tool, and be validated repeatably. MVP 0.3 adds provider-neutral structured
 ToolCall handling on top of that deterministic tool substrate. MVP 0.3.7 adds
-optional llama.cpp backend compatibility for that provider-neutral boundary. It
-MVP 0.4 adds bounded Agent Loop v1 through an inspectable `/agent/run` API. It
-is still not an unbounded autonomous agent runtime.
+optional llama.cpp backend compatibility for that provider-neutral boundary.
+MVP 0.4 adds bounded Agent Loop v1 through an inspectable `/agent/run` API.
+MVP 0.5 adds explicit local persistence, sessions, conversation-scoped
+persistent chat, and stored memory summaries. It is still not an unbounded
+autonomous agent runtime.
 
-## MVP 0.4 Status
+## MVP 0.5 Status
 
-Latest completed milestone: MVP 0.4 Agent Loop v1.
+Latest completed milestone: MVP 0.5 Persistent Conversations and Memory.
 
-Included through MVP 0.4:
+Included through MVP 0.5:
 
 - Python package skeleton
 - Environment-based runtime settings
@@ -50,6 +52,14 @@ Included through MVP 0.4:
 - Final answer synthesis for bounded agent runs
 - Explicit max steps, max tool errors, and timeout safety limits
 - Minimal `POST /agent/run` API
+- Local SQLite persistence configured through `SQLITE_PATH` / `sqlite_path`
+- Strict session, conversation, message, and memory summary contracts
+- Explicit sessions and conversations API
+- Ordered local message store
+- Explicit conversation-scoped persistent chat API
+- Conversation-scoped memory summaries
+- Persistent chat context injection from prior local messages and the latest
+  local memory summary
 - Request ids, basic request logging, and tool execution logging
 - Docker and Compose smoke tests
 - Makefile development shortcuts
@@ -91,12 +101,33 @@ limit exits are explicit in returned `AgentRun` data. This is not an unbounded
 autonomous loop, and it does not add persistent memory, RAG, filesystem access,
 calendar integration, sandboxing, CLI, streaming, or MCP support.
 
+In the 0.5 persistent conversations and memory flow:
+
+1. Local SQLite persistence is configured through `sqlite_path`, `SQLITE_PATH`,
+   or `AIGENTEGO_SQLITE_PATH`.
+2. Sessions and conversations are explicitly created and listed through the API.
+3. Conversation messages are stored in the local message store.
+4. Persistent chat uses `POST /conversations/{conversation_id}/chat`.
+5. Successful persistent chat stores the user and assistant turn after the
+   provider response succeeds.
+6. Provider failure is all-or-nothing for the new turn: neither the new user
+   message nor a synthetic assistant message is stored.
+7. Memory summaries are conversation-scoped local records.
+8. Persistent chat can inject the latest local memory summary and prior
+   conversation messages into the provider request.
+
+Existing `POST /chat` remains stateless. Existing `POST /agent/run` does not
+write to persistence and does not use persisted context. Memory summaries are
+stored explicitly; MVP 0.5 does not generate summaries automatically. This
+milestone does not add RAG, notes search, filesystem access, calendar
+integration, sandboxing, CLI, streaming, or MCP support.
+
 ## Roadmap
 
 The high-level 0.x MVP roadmap is tracked in
 [docs/ROADMAP.md](docs/ROADMAP.md). It separates completed behavior from
-planned future capabilities such as the agent loop, memory, RAG, filesystem
-access, calendar integration, sandboxing, streaming, and CLI support.
+planned future capabilities such as RAG, filesystem access, calendar
+integration, sandboxing, streaming, and CLI support.
 
 ## Prerequisites
 
@@ -168,6 +199,21 @@ The canonical llama.cpp value is `llamacpp`. Alias spellings such as
 aliases for existing Ollama environments, but new configuration should use the
 provider-neutral names above.
 
+## Local Persistence Configuration
+
+MVP 0.5 uses local SQLite persistence for explicit sessions, conversations,
+messages, and memory summaries. The default path is ignored by Git:
+
+```sh
+SQLITE_PATH=.aigentego/aigentego.sqlite3
+```
+
+`AIGENTEGO_SQLITE_PATH` is also accepted as a compatibility alias for the same
+setting. Tests use temporary databases and do not write to the default local
+database. Persistence is local-first and explicit: only the session,
+conversation, and conversation-scoped persistent chat endpoints write records.
+The stateless `/chat` endpoint and `/agent/run` remain persistence-free.
+
 ### Optional llama.cpp Backend
 
 The `llamacpp` backend expects a separately managed llama.cpp `llama-server`
@@ -230,7 +276,7 @@ Example shape:
 ```json
 {
   "status": "ok",
-  "package_version": "0.4.0",
+  "package_version": "0.5.0",
   "llm_backend": "ollama",
   "llm_provider": "ollama",
   "provider_base_url": "http://ollama:11434",
@@ -384,6 +430,71 @@ Invalid request payloads return HTTP 422. Provider, structured-output, tool, or
 safety-limit failures are represented as inspectable `failed` or `stopped`
 `AgentRun` values unless FastAPI rejects the request before the run starts.
 
+### Persistent Conversation Endpoints
+
+MVP 0.5 adds explicit local persistence endpoints. These endpoints are
+conversation-scoped and local-first; they do not change the stateless `/chat`
+or bounded `/agent/run` behavior.
+
+Create or update a session:
+
+```sh
+curl -X POST http://localhost:8080/sessions \
+  -H 'Content-Type: application/json' \
+  -H 'X-Request-ID: local-session-1' \
+  -d '{"session_id":"session-1","title":"Local planning"}'
+```
+
+List and fetch sessions:
+
+```sh
+curl http://localhost:8080/sessions
+curl http://localhost:8080/sessions/session-1
+```
+
+Create a conversation under a session:
+
+```sh
+curl -X POST http://localhost:8080/sessions/session-1/conversations \
+  -H 'Content-Type: application/json' \
+  -d '{"conversation_id":"conversation-1","title":"Default","is_default":true}'
+```
+
+List and fetch conversations:
+
+```sh
+curl http://localhost:8080/sessions/session-1/conversations
+curl http://localhost:8080/conversations/conversation-1
+```
+
+Send an explicit persistent chat turn:
+
+```sh
+curl -X POST http://localhost:8080/conversations/conversation-1/chat \
+  -H 'Content-Type: application/json' \
+  -H 'X-Request-ID: local-persistent-chat-1' \
+  -d '{"message":"Continue from this local conversation."}'
+```
+
+Example persistent chat response:
+
+```json
+{
+  "request_id": "local-persistent-chat-1",
+  "session_id": "session-1",
+  "conversation_id": "conversation-1",
+  "model": "llama3.2:3b",
+  "message": "Continuing from the local conversation."
+}
+```
+
+Persistent chat sends the latest local memory summary, when one exists, as a
+system context message and appends prior persisted system/user/assistant
+messages before the current user message. Tool messages remain stored but are
+not injected into provider chat context. Memory summary records are created and
+updated through the local store layer in MVP 0.5; no public summary-generation
+endpoint or automatic summarization job is included.
+
 ## Validation
 
 Run the core local validation suite:
@@ -413,12 +524,14 @@ make compose-smoke
 The Compose smoke test starts an isolated stack, waits for Ollama, pulls the
 configured models, starts the API, checks `/health` and `/diagnostics`, sends a
 real `/chat` request, verifies `GET /tools`, manually executes the calculator
-through `POST /tools/execute`, and then cleans up its containers.
+through `POST /tools/execute`, verifies deterministic session and conversation
+persistence endpoints, and then cleans up its containers.
 
-The default Compose smoke test does not call `/agent/run`. Live agent runs
-depend on model compliance with strict structured ToolCall JSON and are better
-validated through deterministic mocked tests by default. Manual local
-`/agent/run` validation is still possible after starting the stack.
+The default Compose smoke test does not call `/agent/run` or persistent chat.
+Live agent runs depend on model compliance with strict structured ToolCall JSON,
+and live persistent chat depends on nondeterministic model output. Both are
+validated through deterministic mocked tests by default. Manual local validation
+is still possible after starting the stack.
 
 ### Optional llama.cpp Manual Validation
 
@@ -460,15 +573,19 @@ structured JSON, and valid calls still execute only through `ToolExecutor`.
 
 ## Current Limitations
 
-- `/chat` supports one public user message per request and non-streaming
-  responses only.
+- `/chat` remains stateless, supports one public user message per request, and
+  returns non-streaming responses only.
 - `/agent/run` is bounded Agent Loop v1 with one structured ToolCall generation
   phase, deterministic tool execution observations, and one final synthesis
-  phase. It is not an unbounded autonomous replanning loop.
+  phase. It is not an unbounded autonomous replanning loop and does not use
+  persisted context.
+- Persistent chat is explicit and conversation-scoped through
+  `/conversations/{conversation_id}/chat`.
+- Memory summaries are persisted local records; MVP 0.5 does not generate them
+  automatically.
 - Public deterministic tool endpoints remain manual/API-driven.
-- There is no persistent memory store, notes search, read-only filesystem tool,
-  calendar adapter, database integration, sandbox, CLI, MCP, or streaming
-  support.
+- There is no RAG, notes search, read-only filesystem tool, vector database,
+  calendar adapter, sandbox, CLI, MCP, or streaming support.
 - llama.cpp is optional and externally managed; the default Compose stack does
   not include a llama.cpp service or automatic GGUF model download.
 - Ollama model pull and first-response time depend on local network, disk, CPU,
@@ -479,5 +596,6 @@ structured JSON, and valid calls still execute only through `ToolExecutor`.
 
 ## Next Direction
 
-The completed runtime milestone is bounded Agent Loop v1. The next planned
-runtime milestone is persistent conversations and memory.
+The completed runtime milestone is persistent conversations and memory. The next
+planned runtime milestone is notes search, read-only filesystem access, and RAG
+v1 over explicit local roots.
