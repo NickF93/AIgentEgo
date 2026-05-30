@@ -9,6 +9,7 @@ from aigentego.agents import AgentLoopExecutor, AgentRun
 from aigentego.api.dependencies import (
     get_llm_provider,
     get_message_store,
+    get_note_embedding_store,
     get_settings,
     get_tool_executor,
     get_tool_registry,
@@ -23,7 +24,11 @@ from aigentego.api.schemas import (
     ConversationListApiResponse,
     DiagnosticsResponse,
     HealthResponse,
+    NotesSearchApiRequest,
+    NotesSearchApiResponse,
     PersistentChatApiResponse,
+    RagContextApiRequest,
+    RagContextApiResponse,
     SessionApiResponse,
     SessionCreateApiRequest,
     SessionListApiResponse,
@@ -48,6 +53,14 @@ from aigentego.persistence import (
     MessageStore,
     Session,
     build_conversation_context_messages,
+)
+from aigentego.retrieval import (
+    NoteEmbeddingStore,
+    NoteSearchPipeline,
+    NoteSearchResponse,
+    NoteSearchResponseError,
+    build_rag_context,
+    format_rag_context_for_prompt,
 )
 from aigentego.settings import Settings
 from aigentego.tools import ToolCall, ToolContext, ToolExecutor, ToolRegistry
@@ -263,6 +276,72 @@ async def run_agent(
     )
 
 
+@router.post(
+    "/notes/search",
+    response_model=NotesSearchApiResponse,
+    responses={
+        status.HTTP_502_BAD_GATEWAY: {"model": ApiErrorResponse},
+        status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ApiErrorResponse},
+    },
+)
+async def search_notes(
+    request: Request,
+    payload: NotesSearchApiRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+    provider: Annotated[LlmProvider, Depends(get_llm_provider)],
+    store: Annotated[NoteEmbeddingStore, Depends(get_note_embedding_store)],
+) -> NotesSearchApiResponse:
+    """Search local note chunks with persisted embeddings."""
+    request_id = get_request_id(request)
+    search_response = await _search_notes(
+        query=payload.query,
+        top_k=payload.top_k,
+        settings=settings,
+        provider=provider,
+        store=store,
+    )
+    return NotesSearchApiResponse(
+        request_id=request_id,
+        search=search_response,
+    )
+
+
+@router.post(
+    "/rag/context",
+    response_model=RagContextApiResponse,
+    responses={
+        status.HTTP_502_BAD_GATEWAY: {"model": ApiErrorResponse},
+        status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ApiErrorResponse},
+    },
+)
+async def build_context(
+    request: Request,
+    payload: RagContextApiRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+    provider: Annotated[LlmProvider, Depends(get_llm_provider)],
+    store: Annotated[NoteEmbeddingStore, Depends(get_note_embedding_store)],
+) -> RagContextApiResponse:
+    """Build bounded RAG context from local note search results."""
+    request_id = get_request_id(request)
+    search_response = await _search_notes(
+        query=payload.query,
+        top_k=payload.top_k,
+        settings=settings,
+        provider=provider,
+        store=store,
+    )
+    context = build_rag_context(
+        search_response.results,
+        limits=payload.to_limits(),
+    )
+    return RagContextApiResponse(
+        request_id=request_id,
+        search=search_response,
+        context=context,
+        formatted_context=format_rag_context_for_prompt(context),
+    )
+
+
 @router.post("/sessions", response_model=SessionApiResponse)
 async def create_session(
     request: Request,
@@ -425,6 +504,41 @@ async def _provider_reachable(provider: LlmProvider) -> bool:
         return await provider.health()
     except LlmProviderError:
         return False
+
+
+async def _search_notes(
+    *,
+    query: str,
+    top_k: int,
+    settings: Settings,
+    provider: LlmProvider,
+    store: NoteEmbeddingStore,
+) -> NoteSearchResponse:
+    pipeline = NoteSearchPipeline(
+        provider=provider,
+        store=store,
+        model=settings.embedding_model,
+    )
+    try:
+        return await pipeline.search(query, top_k=top_k)
+    except (LlmConnectionError, LlmTimeoutError) as exc:
+        raise _api_error(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            error="llm_unavailable",
+            message=str(exc),
+        ) from exc
+    except (LlmResponseError, NoteSearchResponseError) as exc:
+        raise _api_error(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            error="embedding_bad_response",
+            message=str(exc),
+        ) from exc
+    except LlmProviderError as exc:
+        raise _api_error(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            error="llm_error",
+            message=str(exc),
+        ) from exc
 
 
 def _api_error(*, status_code: int, error: str, message: str) -> HTTPException:
