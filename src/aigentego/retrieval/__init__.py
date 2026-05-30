@@ -12,16 +12,41 @@ from aigentego.retrieval.filesystem_policy import (
     PathOutsideAllowedRootsError,
     ReadOnlyFilesystemPolicy,
 )
-from aigentego.retrieval.store import FileMetadataStore
+from aigentego.retrieval.ingestion import (
+    DEFAULT_CHUNK_SIZE_CHARS,
+    NoteChunk,
+    NoteDecodeError,
+    NoteDocument,
+    NoteIngestionError,
+    NoteIngestionResult,
+    UnsupportedNoteFileError,
+    chunk_note_document,
+    ingest_note_file,
+    ingest_note_path,
+    normalize_note_text,
+)
+from aigentego.retrieval.store import FileMetadataStore, NoteChunkStore
 
 __all__ = [
     "AllowedRoot",
+    "DEFAULT_CHUNK_SIZE_CHARS",
     "FileMetadata",
     "FileMetadataStore",
     "FilesystemAccessError",
     "InvalidAllowedRootError",
+    "NoteChunk",
+    "NoteChunkStore",
+    "NoteDecodeError",
+    "NoteDocument",
+    "NoteIngestionError",
+    "NoteIngestionResult",
     "PathOutsideAllowedRootsError",
     "ReadOnlyFilesystemPolicy",
     "SUPPORTED_NOTE_EXTENSIONS",
+    "UnsupportedNoteFileError",
+    "chunk_note_document",
     "discover_note_files",
+    "ingest_note_file",
+    "ingest_note_path",
+    "normalize_note_text",
 ]
