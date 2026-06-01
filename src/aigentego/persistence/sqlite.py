@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 4
 SCHEMA_VERSION_KEY = "schema_version"
 
 _METADATA_TABLE_SQL = """
@@ -73,6 +73,57 @@ CREATE TABLE IF NOT EXISTS memory_summaries (
 )
 """
 
+_NOTE_FILES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS note_files (
+    path TEXT PRIMARY KEY,
+    root_path TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+    modified_time_ns INTEGER NOT NULL CHECK (modified_time_ns >= 0),
+    extension TEXT NOT NULL CHECK (extension IN ('.md', '.markdown', '.txt')),
+    UNIQUE (root_path, relative_path)
+)
+"""
+
+_NOTE_DOCUMENTS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS note_documents (
+    document_id TEXT PRIMARY KEY,
+    file_path TEXT NOT NULL UNIQUE,
+    content_length INTEGER NOT NULL CHECK (content_length >= 0),
+    content_hash TEXT NOT NULL,
+    FOREIGN KEY (file_path) REFERENCES note_files (path) ON DELETE CASCADE
+)
+"""
+
+_NOTE_CHUNKS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS note_chunks (
+    chunk_id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL CHECK (chunk_index >= 0),
+    content TEXT NOT NULL,
+    content_length INTEGER NOT NULL CHECK (content_length >= 1),
+    content_hash TEXT NOT NULL,
+    UNIQUE (document_id, chunk_index),
+    FOREIGN KEY (document_id)
+        REFERENCES note_documents (document_id)
+        ON DELETE CASCADE
+)
+"""
+
+_NOTE_CHUNK_EMBEDDINGS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS note_chunk_embeddings (
+    chunk_id TEXT NOT NULL,
+    model TEXT NOT NULL,
+    dimensions INTEGER NOT NULL CHECK (dimensions >= 1),
+    vector_json TEXT NOT NULL,
+    chunk_content_hash TEXT NOT NULL,
+    PRIMARY KEY (chunk_id, model),
+    FOREIGN KEY (chunk_id)
+        REFERENCES note_chunks (chunk_id)
+        ON DELETE CASCADE
+)
+"""
+
 _CONVERSATIONS_SESSION_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_conversations_session_id
 ON conversations (session_id)
@@ -86,6 +137,26 @@ ON messages (conversation_id, sequence_index)
 _MEMORY_SUMMARIES_CONVERSATION_REVISION_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_memory_summaries_conversation_revision
 ON memory_summaries (conversation_id, revision DESC)
+"""
+
+_NOTE_FILES_ROOT_RELATIVE_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_note_files_root_relative
+ON note_files (root_path, relative_path)
+"""
+
+_NOTE_DOCUMENTS_FILE_PATH_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_note_documents_file_path
+ON note_documents (file_path)
+"""
+
+_NOTE_CHUNKS_DOCUMENT_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_note_chunks_document_index
+ON note_chunks (document_id, chunk_index)
+"""
+
+_NOTE_CHUNK_EMBEDDINGS_MODEL_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_note_chunk_embeddings_model
+ON note_chunk_embeddings (model, chunk_id)
 """
 
 
@@ -129,9 +200,17 @@ def initialize_sqlite_schema(connection: sqlite3.Connection) -> None:
     connection.execute(_CONVERSATIONS_TABLE_SQL)
     connection.execute(_MESSAGES_TABLE_SQL)
     connection.execute(_MEMORY_SUMMARIES_TABLE_SQL)
+    connection.execute(_NOTE_FILES_TABLE_SQL)
+    connection.execute(_NOTE_DOCUMENTS_TABLE_SQL)
+    connection.execute(_NOTE_CHUNKS_TABLE_SQL)
+    connection.execute(_NOTE_CHUNK_EMBEDDINGS_TABLE_SQL)
     connection.execute(_CONVERSATIONS_SESSION_INDEX_SQL)
     connection.execute(_MESSAGES_CONVERSATION_SEQUENCE_INDEX_SQL)
     connection.execute(_MEMORY_SUMMARIES_CONVERSATION_REVISION_INDEX_SQL)
+    connection.execute(_NOTE_FILES_ROOT_RELATIVE_INDEX_SQL)
+    connection.execute(_NOTE_DOCUMENTS_FILE_PATH_INDEX_SQL)
+    connection.execute(_NOTE_CHUNKS_DOCUMENT_INDEX_SQL)
+    connection.execute(_NOTE_CHUNK_EMBEDDINGS_MODEL_INDEX_SQL)
     connection.execute(
         """
         INSERT INTO schema_metadata (key, value)

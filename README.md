@@ -16,14 +16,16 @@ ToolCall handling on top of that deterministic tool substrate. MVP 0.3.7 adds
 optional llama.cpp backend compatibility for that provider-neutral boundary.
 MVP 0.4 adds bounded Agent Loop v1 through an inspectable `/agent/run` API.
 MVP 0.5 adds explicit local persistence, sessions, conversation-scoped
-persistent chat, and stored memory summaries. It is still not an unbounded
-autonomous agent runtime.
+persistent chat, and stored memory summaries. MVP 0.6 adds local notes search,
+read-only filesystem access over explicit allowed roots, and RAG v1 context
+assembly. It is still not an unbounded autonomous agent runtime.
 
-## MVP 0.5 Status
+## MVP 0.6 Status
 
-Latest completed milestone: MVP 0.5 Persistent Conversations and Memory.
+Latest completed milestone: MVP 0.6 Notes Search, Read-Only Filesystem, and
+RAG v1.
 
-Included through MVP 0.5:
+Included through MVP 0.6:
 
 - Python package skeleton
 - Environment-based runtime settings
@@ -60,6 +62,15 @@ Included through MVP 0.5:
 - Conversation-scoped memory summaries
 - Persistent chat context injection from prior local messages and the latest
   local memory summary
+- Explicit read-only filesystem policy for local notes roots
+- Safe allowed-root configuration through `NOTES_ALLOWED_ROOTS`
+- Deterministic text and Markdown note discovery under allowed roots
+- Local note metadata, document, chunk, and embedding persistence
+- Read-only ingestion for `.txt`, `.md`, and `.markdown` files
+- Provider-neutral note chunk embedding pipeline
+- Deterministic local notes search over persisted chunk embeddings
+- Bounded RAG v1 context assembly with safe source metadata
+- Minimal `POST /notes/search` and `POST /rag/context` APIs
 - Request ids, basic request logging, and tool execution logging
 - Docker and Compose smoke tests
 - Makefile development shortcuts
@@ -122,12 +133,38 @@ stored explicitly; MVP 0.5 does not generate summaries automatically. This
 milestone does not add RAG, notes search, filesystem access, calendar
 integration, sandboxing, CLI, streaming, or MCP support.
 
+In the 0.6 notes search and RAG v1 flow:
+
+1. Read-only note roots are configured explicitly through `notes_allowed_roots`,
+   `NOTES_ALLOWED_ROOTS`, or `AIGENTEGO_NOTES_ALLOWED_ROOTS`.
+2. Supported `.txt`, `.md`, and `.markdown` files are discovered only under
+   those allowed roots.
+3. Safe file metadata is indexed locally.
+4. Note content is read through the read-only policy and normalized
+   deterministically.
+5. Notes are chunked deterministically and persisted in local SQLite.
+6. Chunk embeddings are generated through the configured provider-neutral
+   `LlmProvider.embed()` and persisted locally.
+7. Local notes search embeds the query, compares against persisted chunk
+   embeddings, and returns ranked snippets with relative source paths.
+8. RAG v1 assembles bounded context from retrieved snippets.
+9. `POST /notes/search` and `POST /rag/context` expose search and context
+   assembly.
+
+Filesystem access is read-only, allowed roots are explicit, and unrestricted
+filesystem scanning is not supported. AIgentEgo does not add write-capable
+filesystem tools or shell execution in MVP 0.6. RAG v1 assembles context only;
+it does not generate final answers, and existing `POST /chat`, persistent chat,
+and `POST /agent/run` are not automatically RAG-enabled. This milestone does
+not add calendar integration, sandboxing, CLI, streaming, MCP, live external
+integrations, or an external vector database.
+
 ## Roadmap
 
 The high-level 0.x MVP roadmap is tracked in
 [docs/ROADMAP.md](docs/ROADMAP.md). It separates completed behavior from
-planned future capabilities such as RAG, filesystem access, calendar
-integration, sandboxing, streaming, and CLI support.
+planned future capabilities such as calendar integration, sandboxing,
+streaming, and CLI support.
 
 ## Prerequisites
 
@@ -214,6 +251,33 @@ database. Persistence is local-first and explicit: only the session,
 conversation, and conversation-scoped persistent chat endpoints write records.
 The stateless `/chat` endpoint and `/agent/run` remain persistence-free.
 
+## Notes And RAG Configuration
+
+MVP 0.6 uses explicit allowed roots for local note discovery and ingestion.
+There is no default filesystem root, and the runtime does not scan the project
+directory, home directory, `/tmp`, or `/` unless a caller explicitly configures
+an allowed root.
+
+```sh
+NOTES_ALLOWED_ROOTS=/absolute/path/to/notes
+```
+
+`AIGENTEGO_NOTES_ALLOWED_ROOTS` is also accepted as an alias. The value is
+loaded as the `notes_allowed_roots` setting. Paths must point to existing
+directories. All candidate note paths are resolved before approval, and path
+traversal or symlink escapes outside allowed roots are rejected.
+
+Supported note file extensions are:
+
+- `.txt`
+- `.md`
+- `.markdown`
+
+Notes search uses the configured `EMBEDDING_MODEL` through the provider-neutral
+`LlmProvider.embed()` boundary. Retrieved source metadata exposes relative
+paths, chunk ids, document ids, chunk indices, and scores; absolute host paths
+are not exposed by the search or RAG context APIs.
+
 ### Optional llama.cpp Backend
 
 The `llamacpp` backend expects a separately managed llama.cpp `llama-server`
@@ -276,7 +340,7 @@ Example shape:
 ```json
 {
   "status": "ok",
-  "package_version": "0.5.0",
+  "package_version": "0.6.0",
   "llm_backend": "ollama",
   "llm_provider": "ollama",
   "provider_base_url": "http://ollama:11434",
@@ -430,6 +494,91 @@ Invalid request payloads return HTTP 422. Provider, structured-output, tool, or
 safety-limit failures are represented as inspectable `failed` or `stopped`
 `AgentRun` values unless FastAPI rejects the request before the run starts.
 
+### `POST /notes/search`
+
+Searches locally persisted note chunk embeddings. The endpoint embeds the query
+through the configured provider-neutral `LlmProvider.embed()` boundary and
+compares that query embedding against local SQLite chunk embeddings. It does
+not read files, run discovery, ingest notes, call chat, or generate a final
+answer.
+
+```sh
+curl -X POST http://localhost:8080/notes/search \
+  -H 'Content-Type: application/json' \
+  -H 'X-Request-ID: local-notes-search-1' \
+  -d '{"query":"project notes","top_k":3}'
+```
+
+Example shape:
+
+```json
+{
+  "request_id": "local-notes-search-1",
+  "search": {
+    "query": "project notes",
+    "model": "nomic-embed-text",
+    "top_k": 3,
+    "candidate_count": 12,
+    "skipped_stale_embeddings": 0,
+    "skipped_dimension_mismatches": 0,
+    "results": [
+      {
+        "chunk_id": "chunk-id",
+        "document_id": "document-id",
+        "relative_path": "planning/mvp-notes.md",
+        "chunk_index": 0,
+        "score": 0.91,
+        "snippet": "Relevant local note snippet."
+      }
+    ]
+  }
+}
+```
+
+### `POST /rag/context`
+
+Builds bounded RAG v1 context from local notes search results. The endpoint
+performs local notes search, applies snippet and character limits, returns
+structured source-attributed context, and includes deterministic formatted
+context text for prompt inclusion by a caller. It does not call
+`LlmProvider.chat()` and does not generate a final answer.
+
+```sh
+curl -X POST http://localhost:8080/rag/context \
+  -H 'Content-Type: application/json' \
+  -H 'X-Request-ID: local-rag-context-1' \
+  -d '{"query":"project notes","top_k":5,"max_snippets":3,"max_total_characters":1200}'
+```
+
+Example shape:
+
+```json
+{
+  "request_id": "local-rag-context-1",
+  "search": {
+    "query": "project notes",
+    "model": "nomic-embed-text",
+    "top_k": 5,
+    "candidate_count": 12,
+    "skipped_stale_embeddings": 0,
+    "skipped_dimension_mismatches": 0,
+    "results": []
+  },
+  "context": {
+    "items": [],
+    "source_result_count": 0,
+    "excluded_by_limit_count": 0,
+    "total_snippet_characters": 0,
+    "limits": {
+      "max_snippets": 3,
+      "max_total_characters": 1200
+    },
+    "truncated": false
+  },
+  "formatted_context": ""
+}
+```
+
 ### Persistent Conversation Endpoints
 
 MVP 0.5 adds explicit local persistence endpoints. These endpoints are
@@ -527,11 +676,13 @@ real `/chat` request, verifies `GET /tools`, manually executes the calculator
 through `POST /tools/execute`, verifies deterministic session and conversation
 persistence endpoints, and then cleans up its containers.
 
-The default Compose smoke test does not call `/agent/run` or persistent chat.
-Live agent runs depend on model compliance with strict structured ToolCall JSON,
-and live persistent chat depends on nondeterministic model output. Both are
-validated through deterministic mocked tests by default. Manual local validation
-is still possible after starting the stack.
+The default Compose smoke test does not call `/agent/run`, persistent chat,
+`/notes/search`, or `/rag/context`. Live agent runs depend on model compliance
+with strict structured ToolCall JSON, live persistent chat depends on
+nondeterministic model output, and live notes/RAG smoke would require
+deterministic note indexing plus embedding behavior. These paths are validated
+through deterministic mocked tests by default. Manual local validation is still
+possible after starting the stack.
 
 ### Optional llama.cpp Manual Validation
 
@@ -583,9 +734,15 @@ structured JSON, and valid calls still execute only through `ToolExecutor`.
   `/conversations/{conversation_id}/chat`.
 - Memory summaries are persisted local records; MVP 0.5 does not generate them
   automatically.
+- Notes search is local-first and uses only persisted note chunks and
+  embeddings created from explicitly allowed read-only roots.
+- RAG v1 assembles bounded source-attributed context only; it does not generate
+  final answers and is not automatically wired into `/chat`, persistent chat,
+  or `/agent/run`.
 - Public deterministic tool endpoints remain manual/API-driven.
-- There is no RAG, notes search, read-only filesystem tool, vector database,
-  calendar adapter, sandbox, CLI, MCP, or streaming support.
+- There is no write-capable filesystem tool, unrestricted filesystem scanning,
+  shell execution, external vector database, calendar adapter, sandbox, CLI,
+  MCP, or streaming support.
 - llama.cpp is optional and externally managed; the default Compose stack does
   not include a llama.cpp service or automatic GGUF model download.
 - Ollama model pull and first-response time depend on local network, disk, CPU,
@@ -596,6 +753,6 @@ structured JSON, and valid calls still execute only through `ToolExecutor`.
 
 ## Next Direction
 
-The completed runtime milestone is persistent conversations and memory. The next
-planned runtime milestone is notes search, read-only filesystem access, and RAG
-v1 over explicit local roots.
+The completed runtime milestone is notes search, read-only filesystem access,
+and RAG v1 context assembly. The next planned runtime milestone is calendar
+integration.

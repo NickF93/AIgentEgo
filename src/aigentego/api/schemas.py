@@ -6,6 +6,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from aigentego.agents import AgentLoopLimits
 from aigentego.persistence import Conversation, Session
+from aigentego.retrieval import (
+    DEFAULT_NOTE_SEARCH_TOP_K,
+    DEFAULT_RAG_MAX_SNIPPETS,
+    DEFAULT_RAG_MAX_TOTAL_CHARACTERS,
+    NoteSearchResponse,
+    RagContext,
+    RagContextLimits,
+)
 from aigentego.tools import ToolDefinition, ToolErrorDetail
 
 
@@ -105,6 +113,73 @@ class AgentRunApiRequest(BaseModel):
                 else default_limits.timeout_seconds
             ),
         )
+
+
+class NotesSearchApiRequest(BaseModel):
+    """Public local notes search request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=1)
+    top_k: int = Field(default=DEFAULT_NOTE_SEARCH_TOP_K, ge=1)
+
+    @field_validator("query")
+    @classmethod
+    def strip_query(cls, value: str) -> str:
+        """Reject blank queries after trimming surrounding whitespace."""
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("query must not be blank")
+        return stripped
+
+    @field_validator("top_k", mode="before")
+    @classmethod
+    def validate_top_k(cls, value: object) -> object:
+        """Reject bools before Pydantic can coerce them into integers."""
+        if isinstance(value, bool):
+            raise ValueError("top_k must be an integer")
+        return value
+
+
+class NotesSearchApiResponse(BaseModel):
+    """Public local notes search response."""
+
+    request_id: str
+    search: NoteSearchResponse
+
+
+class RagContextApiRequest(NotesSearchApiRequest):
+    """Public local RAG context request."""
+
+    max_snippets: int = Field(default=DEFAULT_RAG_MAX_SNIPPETS, ge=1)
+    max_total_characters: int = Field(
+        default=DEFAULT_RAG_MAX_TOTAL_CHARACTERS,
+        ge=1,
+    )
+
+    @field_validator("max_snippets", "max_total_characters", mode="before")
+    @classmethod
+    def validate_context_limits(cls, value: object) -> object:
+        """Reject bools before Pydantic can coerce them into integers."""
+        if isinstance(value, bool):
+            raise ValueError("context limits must be integers")
+        return value
+
+    def to_limits(self) -> RagContextLimits:
+        """Build deterministic RAG context limits from request fields."""
+        return RagContextLimits(
+            max_snippets=self.max_snippets,
+            max_total_characters=self.max_total_characters,
+        )
+
+
+class RagContextApiResponse(BaseModel):
+    """Public local RAG context response."""
+
+    request_id: str
+    search: NoteSearchResponse
+    context: RagContext
+    formatted_context: str
 
 
 class SessionCreateApiRequest(BaseModel):

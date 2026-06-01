@@ -8,15 +8,18 @@ developer-facing UX.
 
 ## Current Status
 
-MVP 0.1, MVP 0.2, MVP 0.2.7, MVP 0.3, MVP 0.3.7, MVP 0.4, and MVP 0.5
-are completed.
+MVP 0.1, MVP 0.2, MVP 0.2.7, MVP 0.3, MVP 0.3.7, MVP 0.4, MVP 0.5,
+and MVP 0.6 are completed.
 MVP 0.3 closed single-step LLM structured output to deterministic ToolCall
 handling while keeping execution bounded and provider-neutral. MVP 0.3.7 added
 optional llama.cpp backend compatibility behind the same `LlmProvider`
 boundary. MVP 0.4 added bounded Agent Loop v1 with inspectable `AgentRun` and
 `AgentStep` state. MVP 0.5 added explicit local SQLite persistence, sessions,
 conversations, ordered messages, conversation-scoped memory summaries, and
-persistent chat context injection from local conversation state.
+persistent chat context injection from local conversation state. MVP 0.6 added
+explicit read-only allowed roots, deterministic note discovery and ingestion,
+local chunk and embedding persistence, local notes search, bounded RAG v1
+context assembly, and minimal `/notes/search` and `/rag/context` APIs.
 
 MVP 0.1 provides the local LLM runtime foundation:
 
@@ -50,9 +53,11 @@ MVP 0.2 adds the deterministic tool runtime:
 - README documentation for explicit API-driven tools
 
 AIgentEgo is still not a complete agent runtime. The following capabilities are
-not implemented yet: RAG, notes search, file access, calendar integration,
-Python sandbox, CLI, streaming, MCP, live external integrations, automatic
-memory summary generation, and retrieval over external sources.
+not implemented yet: RAG final answer generation, automatic RAG integration
+into chat or agent runs, write-capable filesystem tools, unrestricted
+filesystem scanning, shell execution, calendar integration, Python sandbox,
+CLI, streaming, MCP, live external integrations, automatic memory summary
+generation, and retrieval over external sources.
 
 ## Roadmap Principles
 
@@ -74,7 +79,7 @@ memory summary generation, and retrieval over external sources.
 | `0.3.7` | llama.cpp backend compatibility | Completed | Additional local backend adapter and capability comparison | Compare Ollama and llama.cpp behavior before building the agent loop |
 | `0.4` | Agent loop v1 | Completed | Bounded inspectable agent execution | Run a minimal agent loop with limits, observations, and `/agent/run` |
 | `0.5` | Persistent conversations and memory | Completed | Local persistence and conversation memory | Resume explicit conversations and inject saved local context into persistent chat |
-| `0.6` | Notes search, read-only filesystem, and RAG v1 | Planned | Local retrieval over explicit read-only roots | Search notes/files and use retrieved snippets as grounded context |
+| `0.6` | Notes search, read-only filesystem, and RAG v1 | Completed | Local retrieval over explicit read-only roots | Search notes/files and assemble retrieved snippets as bounded context |
 | `0.7` | Calendar integration | Planned | Calendar query tools and adapters | Query local/fake calendars first, with approval-gated write intent later |
 | `0.8` | Python sandbox | Planned | Restricted Python execution | Run approved Python snippets inside a constrained sandbox |
 | `0.9` | Streaming and CLI | Planned | Streaming UX and terminal interface | Stream chat/agent events and use the runtime through a local CLI |
@@ -294,11 +299,29 @@ High-level sprint blocks:
 
 ## `0.6` Notes Search, Read-Only Filesystem, and RAG v1
 
-Status: planned.
+Status: completed.
 
-This milestone adds local retrieval over explicitly allowed read-only roots.
+This milestone added local retrieval over explicitly allowed read-only roots.
 File access is read-only, allowed roots must be explicit, unrestricted
-filesystem access is not allowed, and no shell execution is introduced here.
+filesystem access is not allowed, and no shell execution is introduced.
+
+Completed behavior:
+
+- Explicit read-only filesystem policy and allowed-root configuration.
+- Deterministic note file discovery for `.txt`, `.md`, and `.markdown` files.
+- Local metadata, document, chunk, and embedding persistence in SQLite.
+- Read-only text and Markdown ingestion with deterministic normalization and
+  chunking.
+- Provider-neutral embedding generation through `LlmProvider.embed()`.
+- Deterministic local notes search with safe relative source metadata.
+- Bounded RAG v1 context assembly and deterministic formatted context text.
+- Minimal `POST /notes/search` and `POST /rag/context` APIs.
+
+This milestone does not add RAG final answer generation, automatic RAG
+integration into `/chat`, persistent chat, or `/agent/run`, write-capable
+filesystem tools, shell execution, calendar integration, sandboxing, CLI,
+streaming, MCP, live external integrations, external vector databases, or
+placeholder future modules.
 
 High-level sprint blocks:
 
@@ -306,12 +329,10 @@ High-level sprint blocks:
 - `0.6.1` = file discovery and metadata indexing
 - `0.6.2` = notes ingestion for text and Markdown files
 - `0.6.3` = embedding pipeline using the configured embedding model
-- `0.6.4` = local retrieval index
-- `0.6.5` = NotesSearchTool
-- `0.6.6` = ReadOnlyFileTool
-- `0.6.7` = RAG context builder with source snippets
-- `0.6.8` = agent integration for notes and file search
-- `0.6.9` = tests, smoke cases, and README update
+- `0.6.4` = local notes search and retrieval
+- `0.6.5` = RAG context assembly
+- `0.6.6` = notes search and RAG API
+- `0.6.7` = tests, smoke cases, documentation, roadmap, and closure
 
 ## `0.7` Calendar Integration
 
@@ -426,8 +447,9 @@ hold for one backend.
 The bounded agent loop follows structured ToolCalls and backend compatibility
 because it needs a reliable way to alternate between model output and tool
 observations. Persistent conversations and memory come after the loop because
-they add explicit local state. RAG, files, calendar, and sandboxing come later
-because they add external data or security-sensitive execution surfaces.
+they add explicit local state. Notes search and RAG follow memory because they
+add local retrieval over explicit read-only roots. Calendar and sandboxing come
+later because they add external integration or execution surfaces.
 Streaming and CLI come after the core runtime behavior is stable, and the final
 milestone focuses on evaluation, hardening, documentation, and release
 readiness.

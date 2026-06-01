@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from aigentego.settings import Settings
@@ -14,6 +15,8 @@ SETTINGS_ENV_VARS = (
     "OLLAMA_EMBED_MODEL",
     "SQLITE_PATH",
     "AIGENTEGO_SQLITE_PATH",
+    "NOTES_ALLOWED_ROOTS",
+    "AIGENTEGO_NOTES_ALLOWED_ROOTS",
     "REQUEST_TIMEOUT_SECONDS",
     "LOG_LEVEL",
 )
@@ -34,6 +37,7 @@ def test_default_settings_can_be_instantiated(monkeypatch) -> None:
     assert settings.llm_backend == "ollama"
     assert settings.llm_base_url == "http://ollama:11434"
     assert settings.sqlite_path == ".aigentego/aigentego.sqlite3"
+    assert settings.notes_allowed_roots == ()
     assert settings.request_timeout_seconds == 120
     assert settings.log_level == "INFO"
 
@@ -66,6 +70,10 @@ def test_canonical_environment_variables_override_defaults(monkeypatch) -> None:
     monkeypatch.setenv("CHAT_MODEL", "qwen2.5:7b")
     monkeypatch.setenv("EMBEDDING_MODEL", "mxbai-embed-large")
     monkeypatch.setenv("SQLITE_PATH", "/tmp/aigentego-test.sqlite3")
+    monkeypatch.setenv(
+        "NOTES_ALLOWED_ROOTS",
+        json.dumps(["/tmp/aigentego-notes", "/tmp/aigentego-docs"]),
+    )
     monkeypatch.setenv("REQUEST_TIMEOUT_SECONDS", "30")
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
 
@@ -78,6 +86,10 @@ def test_canonical_environment_variables_override_defaults(monkeypatch) -> None:
     assert settings.chat_model == "qwen2.5:7b"
     assert settings.embedding_model == "mxbai-embed-large"
     assert settings.sqlite_path == "/tmp/aigentego-test.sqlite3"
+    assert settings.notes_allowed_roots == (
+        "/tmp/aigentego-notes",
+        "/tmp/aigentego-docs",
+    )
     assert settings.ollama_base_url == "http://localhost:11434"
     assert settings.ollama_chat_model == "qwen2.5:7b"
     assert settings.ollama_embed_model == "mxbai-embed-large"
@@ -180,6 +192,34 @@ def test_canonical_sqlite_path_environment_overrides_alias(monkeypatch) -> None:
     settings = Settings(_env_file=None)
 
     assert settings.sqlite_path == "/tmp/aigentego-canonical.sqlite3"
+
+
+def test_notes_allowed_roots_environment_alias(monkeypatch) -> None:
+    clear_settings_env(monkeypatch)
+    monkeypatch.setenv(
+        "AIGENTEGO_NOTES_ALLOWED_ROOTS",
+        json.dumps(["/tmp/aigentego-alias-notes"]),
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.notes_allowed_roots == ("/tmp/aigentego-alias-notes",)
+
+
+def test_canonical_notes_allowed_roots_environment_overrides_alias(monkeypatch) -> None:
+    clear_settings_env(monkeypatch)
+    monkeypatch.setenv(
+        "NOTES_ALLOWED_ROOTS",
+        json.dumps(["/tmp/aigentego-canonical-notes"]),
+    )
+    monkeypatch.setenv(
+        "AIGENTEGO_NOTES_ALLOWED_ROOTS",
+        json.dumps(["/tmp/aigentego-alias-notes"]),
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.notes_allowed_roots == ("/tmp/aigentego-canonical-notes",)
 
 
 def test_integer_fields_are_parsed_from_environment(monkeypatch) -> None:

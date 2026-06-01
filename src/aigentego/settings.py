@@ -28,6 +28,13 @@ class Settings(BaseSettings):
         default=".aigentego/aigentego.sqlite3",
         validation_alias=AliasChoices("SQLITE_PATH", "AIGENTEGO_SQLITE_PATH"),
     )
+    notes_allowed_roots: tuple[str, ...] = Field(
+        default_factory=tuple,
+        validation_alias=AliasChoices(
+            "NOTES_ALLOWED_ROOTS",
+            "AIGENTEGO_NOTES_ALLOWED_ROOTS",
+        ),
+    )
     request_timeout_seconds: int = 120
     log_level: str = "INFO"
 
