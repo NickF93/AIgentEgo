@@ -1,5 +1,6 @@
 """Provider-neutral calendar domain contracts."""
 
+from aigentego.calendar.adapters import CalendarAdapter, FakeCalendarAdapter
 from aigentego.calendar.contracts import (
     CalendarAvailability,
     CalendarEvent,
@@ -18,6 +19,7 @@ from aigentego.calendar.errors import (
 )
 
 __all__ = [
+    "CalendarAdapter",
     "CalendarAvailability",
     "CalendarConfigurationError",
     "CalendarError",
@@ -30,4 +32,5 @@ __all__ = [
     "CalendarQueryResult",
     "CalendarTimeRange",
     "CalendarWriteNotAllowedError",
+    "FakeCalendarAdapter",
 ]
